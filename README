@@ -1,0 +1,19 @@
+COMPARE_WRF_MIDAS
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!Currently early stages of development!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+This set of scripts is used to create Taylor diagrams for comparing WRF
+with MIDAS data.
+
+FILES
+
+list_wrf_files.sh
+  Create a list of WRF output files which will be used by plot_taylor.ncl
+  (for usage, see comments in file)
+
+plot_taylor.ncl
+  Script to create the actual plots
+  some values need to be set prior ro execution
+
