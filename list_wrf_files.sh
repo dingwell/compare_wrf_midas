@@ -6,6 +6,7 @@
 #  The full list dumped to stdout
 #
 #       !!! first time must be 00 hrs and last must be 21 hrs !!!
+#  --- not true, an update provides the "times" argument, see below ---
 #
 #  File names must follow the pattern:
 #       wrfout_d0X_YYYY-MM-DD_HH:MM:SS
@@ -13,18 +14,21 @@
 #       wrfout_d03_2010-04-22_09:00:00
 #
 #   Usage:
-#      list_wrf_files.sh [/path/to/data] [domain_nr] [start_date] [end_date]
+#      list_wrf_files.sh [/path/to/data] [domain_nr] [start_date] [end_date] [times]
 #
 #   where domain_nr is on the format "d01"
 #   and   start_date, end_date are on the format "YYYY-MM-DD"
 
 # data_dir="./wsm3"         # $1
-# domain    ="d01"          # $2
+# domain="d01"              # $2
 # start_date="2010-04-22"   # $3
 # end_date="2010-04-23"     # $4
+# times='@(00,03,06,09)'    # $5
 
+shopt -s extglob
 #         domain:       hours wanted:     (see comment below)
-ls $1/wrfout_$2*_{00,03,06,09,12,15,18,21}:00:00\
+#echo "$1/wrfout_$2"*"_"$5":00:00"
+ls "$1/wrfout_$2"*"_"$5":00:00" \
         | sed -n '/'$3'_00/,/'$4'_21/p'         \
         | sed 's/.*/&.nc/'
 

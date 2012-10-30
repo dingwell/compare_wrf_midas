@@ -14,10 +14,11 @@ data_dirs=" ./wsm3
             ./wsm5
             ./wsm6
             ./thompson"
-path_to_midas_data='"$HOME/data/obs/midas"'
+path_midas='"$HOME/data/obs/midas"'
 domains="d02"   # currently only supports one entry
 start_date="2010-04-14"
 end_date="2010-04-19"
+times_midas='@(00|03|06|09|12|15|18|21)'  # MIDAS observation times
 #--  END PRESETS  --#
 
 # Local variables:
@@ -32,7 +33,7 @@ do
     mv $i $i.bak
 done
     # backup midas data files
-for i in ./midas_[0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9].dat
+for i in $path_midas/midas_[0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9].dat
 do                                      # e.g. midas_12345_6789.dat
     mv $i $i.bak
 done
@@ -41,8 +42,8 @@ if [ -e ./$NCLlist ]; then
     mv ./$NCLlist ./$NCLlist.bak  # ask for permission to remove old ncl list script
 fi
 echo "Directory is clean from old files, moving on"
-echo "Searching for WRF data"
 
+echo "Searching for WRF data"
 fnames=""   # Will be filled with a list of list files (lists within lists!)
 for current_dir in $data_dirs  # For each data set (wrf model run)
 do  
@@ -69,7 +70,8 @@ do
                             # We will take advantage of this later on
 
     # The following script will print a list of the matching data files to an ascii file
-    ./list_wrf_files.sh $current_dir $domains $start_date $end_date > 'file_list_wrf_'$name'.txt'
+    ./list_wrf_files.sh $current_dir $domains $start_date $end_date $times_midas \
+      > 'file_list_wrf_'$name'.txt'
 
 done
 echo "list of lists:"
@@ -83,7 +85,7 @@ echo $fnames
         # Here, sed replaces '-' with',' which is used in the midas files
         # the tailing numbers are the the start/end times in (HH)
 
-#for i in $path_to_midas_data/midas_[0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9].dat
+#for i in $path_midas/midas_[0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9].dat
     # extract filenames (same as before but add a suffix)
 #    name=$(echo $current_dir | rev | sed 's/\/.*//' | rev)
     
@@ -108,7 +110,12 @@ echo $fnames
   #echo -e $ncl_enddate
   ncl_line=$ncl_line'\nEND_DATE   = (/ '$ncl_enddate' /)'   # add line to $ncl_line
   #echo -e $ncl_line
-  ncl_line=$ncl_line'\nMIDAS_ROOT = '$path_to_midas_data    # add line to $ncl_line
+  ncl_line=$ncl_line'\nMIDAS_ROOT = '$path_midas    # add line to $ncl_line
+  # Change | to , and @(...) to (/.../) using sed:
+  ncl_midas_times=$(echo $times_midas | sed 's/|/,/g' | sed 's;@(\(.*\));(/\1/);g')  
+  ncl_line=$ncl_line'\nTIMES = '$ncl_midas_times
+
+  echo -e '\nContents of '$NCLlist':'
   echo -e $ncl_line
 
     # Print header:

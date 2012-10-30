@@ -46,7 +46,8 @@ begin;PRESETS;
   VAR = (/ "T" , "UST"/)
 
   ; Observation times in MIDAS data:
-  TIMES = (/ "00", "03", "06", "09", "12", "15", "18", "21" /)
+  ; TIMES = (/ "00", "03", "06", "09", "12", "15", "18", "21" /)
+  ; This is now set by compare_wrf_midas and uses numeric format, not string!
 
   ; Number of padding grid points required to include a station:
   PADDING = 10
@@ -64,8 +65,9 @@ end;PRESETS;
 ; functions
 ; Number  Name
 ;   1     load_wrf_file_names
-;
-;
+;   2     indomain() 
+;   3     read_station_list()
+;   3     MAIN
 ;
 ;
 
@@ -181,16 +183,94 @@ begin
   return stations
 end
 
+; Function extract WRF data at specific (lat,lon) points
+; the requires a (list of) wrf files, a variable name,
+; and one or several pairs of latitude, longitude coordinates
+; NOTE: the loaded variable should be on (t,x,y) format!
+undef("get_wrf_var_in_ll")
+function get_wrf_var_in_ll(f_wrf,vname,lat,lon)
+local var, interp_var, dims, ntimes, npoints, i, latlon_var
+begin
+  var = wrf_user_getvar(f_wrf,vname,-1) ; load wrf field (all times)
+
+  dims = dimsizes(var)                  ; check dimensions
+  if( dimsizes(dims).ne.3 ) then
+    print("WARNING: variable is not a 3D var (t,x,y), coordinates names will be wrong!")
+  end if
+
+  var@lat = wrf_user_getvar(f_wrf,"XLAT",1)  ; get grid coordinates
+  var@lon = wrf_user_getvar(f_wrf,"XLONG",1) ; get grid coordinates
+
+  ntimes  = dims(0)
+  npoints = dimsizes(lat)
+  interp_var = new( (/ntimes,npoints/) ,float)  ; predefine output variable
+  ; Interpolate 2D-field to given lon-lat coordinates:
+  ;   0,1 - inverse distance weight interpolation
+  ;   2   - bilinear interpolation
+  i=0
+  do while i.lt.dims(0) ; loop over times (hopefully this is time)
+    interp_var(i,:) = rcm2points(var@lat,var@lon,var(i,:,:),lat,lon,0)
+    ;interp_var = rcm2points(var@lat,var@lon,var,lat,lon,2)
+    i=i+1
+  end do
+
+  ; Define coordinate system:
+  ; THIS METHOD IS UNSTABLE, INPUT MUST BE ON (T,X,Y) FORMAT
+  interp_var!0 = "Time"
+  interp_var!1 = "Point"
+  interp_var@lon = lon
+  interp_var@lat = lat
+
+  return interp_var
+end
 
 begin;MAIN;
+  ; VARIABLES
+  ; f_wrf         wrfout file pointers
+  ; nfiles        number of wrfout files (should equal ntimes)
+  ; ntimes        length of 'Times' in wrf variable
+  ; wrf_data      current data field from WRF
+  ; midas_data    current data fields from MIDAS
+
+
+  ;TODO load midas data fields and station coordinates
 
   ; open wrf output for reading
   i = 1
   do while(i.lt.dimsizes(LISTS))
+    ; Set up files
     wrf_list = asciiread( LISTS(i),-1,"string") ; load first file-list to EOF
-    f_wrf = addfiles( wrf_list,"r" )   ; open the wrf files
-    print(f_wrf)
+    f_wrf = addfiles( wrf_list,"r" )            ; open the wrf files
 
+    ; DUMMY lat/lon, should be read from midas data
+    lon=(/-19,-18,-17/)
+    lat=(/63,64,65/)
+
+    ; Read from files
+    ;ntimes = wrf_user_list_times(f_wrf)         ; get wrf output times
+    wrf_data = get_wrf_var_in_ll(f_wrf,VAR(i),lat,lon) ; interpolated wrf data
+
+
+    ; Test interpolated wrf data by ploting:
+      wks   = gsn_open_wks ("pdf","xy")                   ; open workstation
+      res                   = True                       ; plot mods desired
+      res@tiMainString      = "Profile Plot"             ; add title
+      res@trYReverse        = True                       ; reverse Y-axis
+      res@xyDashPatterns    = 15                         ; choose dash patterns
+
+      t=new(dimsizes(wrf_data(:,1)),float)
+      j=1
+      do while(j.lt.dimsizes(t))
+        t(j) = j
+        j=j+1
+      end do
+      plot  = gsn_csm_xy (wks,t,wrf_data(:,1),res) ; create plot
+
+    ; The following should loop over variables
+    wrf_data = wrf_user_getvar(f_wrf,VAR(0),-1) ; 
+    print(dimsizes(wrf_list))
+    printVarSummary(wrf_data)
+    
     i=i+1
   end do
   
