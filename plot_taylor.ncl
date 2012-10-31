@@ -43,7 +43,24 @@ begin;PRESETS;
   ; number of places were changes must be made between runs...
 
   ; Fields to be compared:
-  VAR = (/ "T" , "UST"/)
+  ; Current midas table (defined by get_midas_stations.pl)
+  ; C   VAR           C   VAR           C   VAR
+  ;  1  year          11  cld_base_hgt  21  maxT
+  ;  2  month         12  low_cld_type  22  minT
+  ;  3  day           13  med_cld_type  23  sub_obs_hr_cnt
+  ;  4  hour          14  hi_cld_type   24  sun_dur
+  ;  5  src_id        15  vis           25  prcp_24hr_amt
+  ;  6  wdir          16  air_T         26  max_gust
+  ;  7  wspd          17  Td
+  ;  8  weather_code  18  msl_pres
+  ;  9  ttl_cld       19  prcp_hr_cnt
+  ; 10  cld_base_amt  20  prcp_amt
+
+  ; "u10dir" and "u10spd" are not in wrfout, in order to get
+  ; these, we use get_wrf_u10dir and get_wrf_u10spd instead
+  ; (included in this script
+  VAR_WRF = (/"u10dir","u10spd","T2","td2","slp","RAINNC"/)
+  VAR_MIDAS = (/6,7,16,17,18,20/)
 
   ; Observation times in MIDAS data:
   ; TIMES = (/ "00", "03", "06", "09", "12", "15", "18", "21" /)
@@ -92,8 +109,7 @@ end
 
 ; Function used to determine the closest WRF grid point for a given
 ; WRF netCDF file and a set ll-coordinates.  The function will return
-; the ij-coordinates if the given ll is within the domain otherwise
-; zero values is returned.
+; True or False.  Either a scalar or an array depending on input.
 ; Usage:
 ;   result = indomain(f,lon,lat)
 ; where:
@@ -158,7 +174,6 @@ begin
     end do
   end if  ; scalar/vector test
   
-
   return answer
 end
 
@@ -168,13 +183,13 @@ end
 ; MIDAS_ROOT to be defined
 undef("read_station_list")
 function read_station_list()
-local fname,header,stations
+local fname,header,stations,table
 begin
-  fname  = MIDAS_ROOT + "/station_list.dat"
-  table   = asciiread(fname,-1,"string")  ; Read entire file to memory
+  fname = MIDAS_ROOT + "/station_list.dat"
+  table = asciiread(fname,-1,"string")  ; Read entire file to memory
   stations = stringtoint(str_get_field(table(1::), 1, " ")); station id
-  stations@lat = stringtofloat(str_get_field(table(1::),7," "));latitude
-  stations@lon = stringtofloat(str_get_field(table(1::),8," "));longitude
+  stations@lat  = stringtofloat(str_get_field(table(1::),7," "));latitude
+  stations@lon  = stringtofloat(str_get_field(table(1::),8," "));longitude
 
   ;header  = headerreadAsciiHead(infile, 1) ; header (first row)
   ;stations = readAsciiTable(infile,1,"int",1) ; station ID
@@ -183,23 +198,115 @@ begin
   return stations
 end
 
+; Function to read midas observation data
+; The files should be created get_midas_stations.pl
+; and stored as midas_[stnid]_[yyyy].dat
+; in the MIDAS_ROOT/[yyyy] directory
+; Depends on the following global variables:
+;   MIDAS_ROOT, VAR_MIDAS
+undef("read_station_data")
+function read_station_data(stations)
+local data,dims,fname,fpath,table,        \
+      year,month,day,doy,doy_all,hour,    \
+      nstations,ntimes,nvar,ndays,nhours, \
+      i,j,iobs
+begin
+  if(START_DATE(0).ne.END_DATE(0)) then
+    print("ERROR: year of START_DATE and END_DATE must equal!")
+  end if
+
+  fpath = MIDAS_ROOT+"/"+START_DATE(0)+"/"  ; path to MIDAS data
+  ;fname = "midas_"+stations(0)+"_"+START_DATE(0)+".dat" ; First file
+  ;table = asciiread(fpath+fname,-1,"string")  ; Data for first station
+
+  nstations = dimsizes(stations)  ; number of stations
+  nvar      = dimsizes(VAR_MIDAS) ; number of variables
+  nhours    = dimsizes(TIMES)     ; number of sample hours
+
+  ; We temporarily define the year,month,day variables
+  ; in order to get the time-range of the observations
+  ; the same names will later be used for the actual data
+  year = (/START_DATE(0),END_DATE(0)/)  ;start,end year
+  month = (/START_DATE(1),END_DATE(1)/) ;start,end month
+  day = (/START_DATE(2),END_DATE(2)/)   ;start,end day
+  doy = day_of_year(year,month,day)   ;start,end day of year
+  
+  ndays = (doy(1)-doy(0))+1         ; number of days
+  ntimes    = nhours*ndays        ; number of observations (time-range)
+
+  dims = (/ nstations, nvar, ntimes /) ; dimensions of output
+  data = new(dims,float)          ; predefine output var
+  data!0  = "stations"            ; Set coordinate names
+  data!1  = "fields"              ;
+  data!2  = "day_of_year"         ;
+
+  ; Define the day_of_year dimension
+  data&day_of_year = new(ntimes,float)  ; create empty time coordinates
+  data@hour = new(ntimes,float) ; we also want to keep track of the hour
+
+  ; Fill time coordinate values
+  do i=0,ntimes-1,nhours
+    data&day_of_year(i:i+nhours-1) = doy(0)+i/nhours+TIMES/24.  ; day_of_year+hfrac
+    data@hour(i:i+nhours-1) = TIMES    ; hour of observation for comparison
+  end do
+
+  ; Delete temporary variables
+  delete([/year,month,day,doy/])
+
+  do i=0,nstations-1              ; for each station
+    fname = "midas_"+stations(i)+"_"+START_DATE(0)+".dat"
+    table = asciiread(fpath+fname,-1,"string")  ; Read station file
+    if( sum(dimsizes(table)) .eq. 1 ) then        ; If file is empty
+      delete(table) ; Delete files data (1 fillValue) and
+      continue      ; move to next iteration, leaving current station
+    end if          ; undefined (i.e. as fillValues)
+      
+
+    ; Get station information:
+    year  = stringtoint(str_get_field(table(0::), 1, ","))
+    month = stringtoint(str_get_field(table(0::), 2, ","))
+    day   = stringtoint(str_get_field(table(0::), 3, ","))
+
+    doy_all = day_of_year(year,month,day)
+    iobs = ind( doy_all .gt. data&day_of_year(0) .and.  \
+                doy_all .lt. data&day_of_year(ntimes-1) ) ; find relevant obs
+
+    ; We can now use iobs to extract the relevant rows from table
+    hour  = stringtoint(str_get_field(table(iobs), 4, ","))
+    doy   = doy_all(iobs)+hour/24.
+
+    ; There is still one more problem to fix: missing data. When there are
+    ; no observations, there is no entry. We need to find the missing lines
+    ; and assign the corresponding entries in 'data' to fillValues.
+    ; We will tackle this by assigning values using doy as index
+
+    do j=0,nvar-1                 ; load each variable to data
+      data(i,j,{doy}) = stringtofloat(str_get_field(table(iobs),VAR_MIDAS(j), ","))
+    end do  ;variables
+    delete([/table,year,month,day,doy,doy_all,hour,iobs/])
+  end do  ;stations
+
+  return data
+end
+
 ; Function extract WRF data at specific (lat,lon) points
 ; the requires a (list of) wrf files, a variable name,
 ; and one or several pairs of latitude, longitude coordinates
 ; NOTE: the loaded variable should be on (t,x,y) format!
 undef("get_wrf_var_in_ll")
-function get_wrf_var_in_ll(f_wrf,vname,lat,lon)
+function get_wrf_var_in_ll(var,vname,lat,lon)
 local var, interp_var, dims, ntimes, npoints, i, latlon_var
 begin
-  var = wrf_user_getvar(f_wrf,vname,-1) ; load wrf field (all times)
+  ;var = wrf_user_getvar(f_wrf,vname,-1) ; load wrf field (all times)
 
   dims = dimsizes(var)                  ; check dimensions
+  printVarSummary(var)
   if( dimsizes(dims).ne.3 ) then
     print("WARNING: variable is not a 3D var (t,x,y), coordinates names will be wrong!")
   end if
 
-  var@lat = wrf_user_getvar(f_wrf,"XLAT",1)  ; get grid coordinates
-  var@lon = wrf_user_getvar(f_wrf,"XLONG",1) ; get grid coordinates
+  ;var@lat = wrf_user_getvar(f_wrf,"XLAT",1)  ; get grid coordinates
+  ;var@lon = wrf_user_getvar(f_wrf,"XLONG",1) ; get grid coordinates
 
   ntimes  = dims(0)
   npoints = dimsizes(lat)
@@ -224,35 +331,127 @@ begin
   return interp_var
 end
 
+undef("get_wrf_u10dir")
+function get_wrf_u10dir(f_wrf)
+local uvmet10,r2d,dir
+begin
+  ; load 10m u,v-components on massgrid, rotated to Earth coordinate
+  uvmet10 = wrf_user_getvar(f_wrf,"uvmet10",-1)
+  r2d = 45.0/atan(1.0)  ; conversion factor (radians to degrees)
+
+  ; We use atan2 instead of atan since plain atan is not able
+  ; to determine direction completely (sometimes 180 degrees off)
+  dir = atan2(uvmet10(0,:,:,:),uvmet10(1,:,:,:))  ; horiz. wind dir
+
+  ; Set dimension names
+  dir!0 = uvmet10!1
+  dir!1 = uvmet10!2
+  dir!2 = uvmet10!3
+  return dir
+end
+
+undef("get_wrf_u10spd")
+function get_wrf_u10spd(f_wrf)
+local uvmet10,spd
+begin
+  ; load 10m u,v-components on massgrid, rotated to Earth coordinate
+  uvmet10 = wrf_user_getvar(f_wrf,"uvmet10",-1)
+  spd = sqrt( uvmet10(0,:,:,:)^2 + uvmet10(0,:,:,:)^2 ) ; horiz. wind spd
+
+  ; Set dimension names
+  spd!0 = uvmet10!1
+  spd!1 = uvmet10!2
+  spd!2 = uvmet10!3
+  return 0
+end
+
+
 begin;MAIN;
   ; VARIABLES
+  ;-------------------FILES AND PATHS---------------------------
   ; f_wrf         wrfout file pointers
+  ;-------------------LENGTH VARIABLES--------------------------
   ; nfiles        number of wrfout files (should equal ntimes)
-  ; ntimes        length of 'Times' in wrf variable
+  ; nlists        number of wrf runs (ie no. of file lists)
+; ; ntimes        length of 'Times' in wrf variable
+  ; nvars         number of fields to check
+  ;-------------------ITERATION COUNTERS------------------------
+  ; i             main loop, iterates over nlists
+  ; il            index for current stn (lon,lat within domain)
+  ; is            index for current stn (all)
+  ; ivar          index current variable, iterates over nvars
+  ;-------------------DATA--------------------------------------
   ; wrf_data      current data field from WRF
-  ; midas_data    current data fields from MIDAS
+  ; wrf_int       interpolated wrf data
+  ; wrf_lat       latitude of grid points  (not staggered)
+  ; wrf_lon       longitude of grid points (not staggered)
+  ; midas_data    data fields from MIDAS
+  ; midas_stns    list of midas stations (including @lat, @lon)
 
+  ; Get lengths and make som checks
+  nvars = dimsizes(VAR_WRF)
+  if(nvars.ne.dimsizes(VAR_MIDAS))
+    print("Error: length of VAR_MIDAS and VAR_WRF must equal")
+  end if
+
+  nlists = dimsizes(LISTS)
 
   ;TODO load midas data fields and station coordinates
+  midas_stns = read_station_list()    ; get available midas stations
+  midas_data = read_station_data(midas_stns)
 
   ; open wrf output for reading
-  i = 1
-  do while(i.lt.dimsizes(LISTS))
+  ;i = 1
+  do i=0,nlists-1;while(i.lt.dimsizes(LISTS))  ; For each set of WRF-data
     ; Set up files
     wrf_list = asciiread( LISTS(i),-1,"string") ; load first file-list to EOF
     f_wrf = addfiles( wrf_list,"r" )            ; open the wrf files
 
-    ; DUMMY lat/lon, should be read from midas data
-    lon=(/-19,-18,-17/)
-    lat=(/63,64,65/)
+    ; Check which stations are within the domain:
+    midas_stns@indomain = indomain(f_wrf,midas_stns@lon,midas_stns@lat)
 
-    ; Read from files
-    ;ntimes = wrf_user_list_times(f_wrf)         ; get wrf output times
-    wrf_data = get_wrf_var_in_ll(f_wrf,VAR(i),lat,lon) ; interpolated wrf data
+    ; We now want to create lat and lon arrays which only contain the
+    ; coordinates of stations within the WRF domain, these points 
+    ; will be used for interpolating the WRF data
+    npoints = num(midas_stns@indomain)  ; Number of stations in domain
+    lon = new( npoints, float)          ; Create new lat,lon arrays
+    lat = new( npoints, float)          ;
 
+    il = 0    ; lat,lon counter (result)
+    is = 0    ; station counter (input)
+    do while(il.lt.npoints) ; get lat,lon for all stations in domain
+      if(midas_stns@indomain(is)) then  ; station in domain?
+        lon(il) = midas_stns@lon(is)    ; use longitude
+        lat(il) = midas_stns@lat(is)    ; use latitude
+        il=il+1                         ; prepare for next lat,lon
+      end if
+      is=is+1                           ; next station
+    end do
+
+    ; Get lat,lon this is the same for all variables
+    ; (unless we read from the staggered grids, and  why would we do
+    ; that?)
+    wrf_lon = wrf_user_getvar(f_wrf,"XLONG",1) ;
+    wrf_lat = wrf_user_getvar(f_wrf,"XLAT",1)  ;
+    do iv=0,nvars-1
+      ; INDEXING WITH i!!! this is index for station id !!!
+      ; Read from files
+      if( VAR_WRF(iv).eq."u10dir" ) then      ; In some cases, e.g. wind direction
+        wrf_data = get_wrf_u10dir(f_wrf)  ; we need to preprocess the data before
+      else if( VAR_WRF(iv).eq."u10spd" ) then ; interpolating to stations
+       wrf_data = get_wrf_u10spd(f_wrf)
+      else
+       wrf_data = wrf_user_getvar(f_wrf,VAR_WRF(iv),-1) ; load wrf field (all times)
+      end if
+      end if 
+      wrf_data@lon=wrf_lon  ; Store latitude and longitude as attributes
+      wrf_data@lat=wrf_lat  ; (required for get_wrf_var_in_ll)
+      wrf_int = get_wrf_var_in_ll(wrf_data,VAR_WRF(iv),lat,lon) ; interpolate wrf data
+      delete(wrf_int)
+    end do
 
     ; Test interpolated wrf data by ploting:
-      wks   = gsn_open_wks ("pdf","xy")                   ; open workstation
+      wks   = gsn_open_wks ("pdf","xy")                  ; open workstation
       res                   = True                       ; plot mods desired
       res@tiMainString      = "Profile Plot"             ; add title
       res@trYReverse        = True                       ; reverse Y-axis
@@ -267,7 +466,7 @@ begin;MAIN;
       plot  = gsn_csm_xy (wks,t,wrf_data(:,1),res) ; create plot
 
     ; The following should loop over variables
-    wrf_data = wrf_user_getvar(f_wrf,VAR(0),-1) ; 
+    wrf_data = wrf_user_getvar(f_wrf,VAR_WRF(0),-1) ; 
     print(dimsizes(wrf_list))
     printVarSummary(wrf_data)
     
