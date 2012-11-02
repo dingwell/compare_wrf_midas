@@ -80,31 +80,35 @@ end;PRESETS;
 
 ; Structure of the rest of this script
 ; functions
-; Number  Name
-;   1     load_wrf_file_names
-;   2     indomain() 
-;   3     read_station_list()
-;   3     MAIN
+; Number  Name                Desrciption
+;   0     load_first_wrf      was used for testing, will be removed
+;   1     indomain            check if LAT,LON is within WRF domain
+;   2     read_station_list   read list of midas stns and coordinates
+;   3     read_station_data   read corresponding stn data
+;   4     get_wrf_var_in_ll   interpolate WRF data to given LAT,LON
+;   5     get_wrf_u10dir      returns horizontal wind dir at 10 m
+;   6     get_wrf_u10spd      returns horizontal wind speed at 10 m
+;   7     ptaylor             plot taylor diagrams midas agains 1 WRF run
 ;
+;   x     MAIN                the main program
+
+;undef("load_first_wrf")
+;function load_first_wrf(wrflists) ; Primarily used for testing, may be removed later on...
+;local wrf_list, wrf, n_latxlon
+;begin
+  ;wrf_list = asciiread( lists(0),-1,"string") ; load first file-list to EOF
+  ;wrf = wrf_list(0)                       ; Current file name
+  ;wrf@file   = addfile( wrf_list(0),"r" )   ; open the first wrf file
+  ;wrf@lat = wrf_user_getvar(f_wrf,"XLAT",0)    ; read lat
+  ;wrf@lon = wrf_user_getvar(f_wrf,"XLONG",0)   ; read lon
+  ;n_latxlon   = dimsizes(lat)
+  ;wrf@n_lat = wrf@n_latxlon(0)    ;used in Read midas data
+  ;wrf@n_lon = wrf@n_latxlon(1)    ;used in Read midas data
 ;
-
-undef("load_first_wrf")
-function load_first_wrf(wrflists) ; Primarily used for testing, may be removed later on...
-local wrf_list, wrf, n_latxlon
-begin
-  wrf_list = asciiread( lists(0),-1,"string") ; load first file-list to EOF
-  wrf = wrf_list(0)                       ; Current file name
-  wrf@file   = addfile( wrf_list(0),"r" )   ; open the first wrf file
-  wrf@lat = wrf_user_getvar(f_wrf,"XLAT",0)    ; read lat
-  wrf@lon = wrf_user_getvar(f_wrf,"XLONG",0)   ; read lon
-  n_latxlon   = dimsizes(lat)
-  wrf@n_lat = wrf@n_latxlon(0)    ;used in Read midas data
-  wrf@n_lon = wrf@n_latxlon(1)    ;used in Read midas data
-
-  wrf@U = wrf_user_getvar(f_wrf,"U",0)    ; just for testing
-
-  return wrf
-end
+  ;wrf@U = wrf_user_getvar(f_wrf,"U",0)    ; just for testing
+;
+  ;return wrf
+;end
 
 
 ; Function used to determine the closest WRF grid point for a given
@@ -236,17 +240,17 @@ begin
 
   dims = (/ nstations, nvar, ntimes /) ; dimensions of output
   data = new(dims,float)          ; predefine output var
-  data!0  = "stations"            ; Set coordinate names
-  data!1  = "fields"              ;
-  data!2  = "day_of_year"         ;
+  data!0  = "Stations"            ; Set coordinate names
+  data!1  = "Fields"              ;
+  data!2  = "DayOfYear"         ;
 
-  ; Define the day_of_year dimension
-  data&day_of_year = new(ntimes,float)  ; create empty time coordinates
+  ; Define the DayOfYear dimension
+  data&DayOfYear = new(ntimes,float)  ; create empty time coordinates
   data@hour = new(ntimes,float) ; we also want to keep track of the hour
 
   ; Fill time coordinate values
   do i=0,ntimes-1,nhours
-    data&day_of_year(i:i+nhours-1) = doy(0)+i/nhours+TIMES/24.  ; day_of_year+hfrac
+    data&DayOfYear(i:i+nhours-1) = doy(0)+i/nhours+TIMES/24.  ; DayOfYear+hfrac
     data@hour(i:i+nhours-1) = TIMES    ; hour of observation for comparison
   end do
 
@@ -268,8 +272,8 @@ begin
     day   = stringtoint(str_get_field(table(0::), 3, ","))
 
     doy_all = day_of_year(year,month,day)
-    iobs = ind( doy_all .gt. data&day_of_year(0) .and.  \
-                doy_all .lt. data&day_of_year(ntimes-1) ) ; find relevant obs
+    iobs = ind( doy_all .gt. data&DayOfYear(0) .and.  \
+                doy_all .lt. data&DayOfYear(ntimes-1) ) ; find relevant obs
 
     ; We can now use iobs to extract the relevant rows from table
     hour  = stringtoint(str_get_field(table(iobs), 4, ","))
@@ -300,7 +304,6 @@ begin
   ;var = wrf_user_getvar(f_wrf,vname,-1) ; load wrf field (all times)
 
   dims = dimsizes(var)                  ; check dimensions
-  printVarSummary(var)
   if( dimsizes(dims).ne.3 ) then
     print("WARNING: variable is not a 3D var (t,x,y), coordinates names will be wrong!")
   end if
@@ -323,8 +326,8 @@ begin
 
   ; Define coordinate system:
   ; THIS METHOD IS UNSTABLE, INPUT MUST BE ON (T,X,Y) FORMAT
-  interp_var!0 = "Time"
-  interp_var!1 = "Point"
+  interp_var!0 = "DayOfYear"
+  interp_var!1 = "Stations"
   interp_var@lon = lon
   interp_var@lat = lat
 
@@ -365,6 +368,70 @@ begin
   return 0
 end
 
+; High level plot function for Taylor diagrams,
+; will call taylor_diagram.ncl
+; The input should have the dimensions:
+;   [Stations]x[Times]
+; ts is the test (estimated values) and ts0
+; is the reference (observed values)
+undef("ptaylor")
+procedure ptaylor(wks,ts,ts0,title)
+local dims,dims0,tts,tts0,cts,cts0,var,var0,\
+      cc,ratio,                             \
+      nsets,npts,                           \
+      res
+begin
+  dims  = dimsizes(ts)
+  dims0 = dimsizes(ts0)
+  if(dimsizes(dims).ne.2 .or. dimsizes(dims0).ne.2) then
+    print("Error: arguments sent to ptaylor must be 2-D")
+  end if
+
+  nsets = dims(0)      ; number of data sets (sites)
+  npts  = dims(1)      ; number of points per set (times)
+  
+  ; Create the transposed time series, tts, (needed for most statistics)
+  tts = (ts)
+  tts0= (ts0)
+
+  ; Statistics used in taylor_diagram.ncl:
+  cc    = new((/1,nsets/),float) ; cross corellation
+  ratio = new((/1,nsets/),float) ; ratio of variances
+
+  ; Cross correlation (centred), result 1-D [Stations]
+  cts   = tts-avg(tts)    ; centre each time series over mean value
+  cts0  = tts0-avg(tts0)  ;
+  cc(0,:) = escorc(tts,tts0)   ; (R in Taylor, 2001)
+
+  ; Calculate the ratio of the (standardized) variances
+  var   = dim_variance_Wrap(tts)  ; calc. variance over rightmost dim (Time)
+  var0  = dim_variance_Wrap(tts0) ; result: 1-D [Stations]
+  ratio(0,:) = var/var0  ; ratio of variances (relative reference)
+
+  ; The rest is mainly from taylor_2.ncl found at:
+  ; http://www.ncl.ucar.edu/Applications/taylor.shtml
+
+  ; 
+  res                 = True               ; diagram mods desired
+  res@tiMainString    = title              ; title
+  res@Colors          = (/"black"/)        ; marker colors
+  res@Markers         = (/14,9/)           ; marker styles
+  res@markerTxYOffset = 0.04               ; offset btwn marker & label
+  res@gsMarkerSizeF   = 0.01               ; marker size   
+  res@txFontHeightF   = 0.015              ; text size 
+
+  res@stnRad          = (/ 0.5, 1.5 /)     ; additional standard radii
+  res@ccRays          = (/ 0.6, 0.9 /)     ; correllation rays
+  ;res@ccRays_color    = (/210,0,0/)       ; default is "black", setting doesn't work
+
+  res@centerDiffRMS   = True               ; RMS 'circles'
+  ;res@centerDiffRMS_color = "black"    ; default is "black"
+
+  plot = taylor_diagram(wks,ratio,cc,res)
+  ; TODO
+  ; set name of figure
+
+end
 
 begin;MAIN;
   ; VARIABLES
@@ -377,9 +444,10 @@ begin;MAIN;
   ; nvars         number of fields to check
   ;-------------------ITERATION COUNTERS------------------------
   ; i             main loop, iterates over nlists
-  ; il            index for current stn (lon,lat within domain)
-  ; is            index for current stn (all)
-  ; ivar          index current variable, iterates over nvars
+  ; ;il            index for current stn (lon,lat within domain)
+  ; ;is            index for current stn (all)
+  ; iv            index current variable, iterates over nvars
+  ; istns         index list for stations within domain
   ;-------------------DATA--------------------------------------
   ; wrf_data      current data field from WRF
   ; wrf_int       interpolated wrf data
@@ -400,9 +468,7 @@ begin;MAIN;
   midas_stns = read_station_list()    ; get available midas stations
   midas_data = read_station_data(midas_stns)
 
-  ; open wrf output for reading
-  ;i = 1
-  do i=0,nlists-1;while(i.lt.dimsizes(LISTS))  ; For each set of WRF-data
+  do i=0,nlists-1   ; For each set of WRF-data
     ; Set up files
     wrf_list = asciiread( LISTS(i),-1,"string") ; load first file-list to EOF
     f_wrf = addfiles( wrf_list,"r" )            ; open the wrf files
@@ -413,65 +479,65 @@ begin;MAIN;
     ; We now want to create lat and lon arrays which only contain the
     ; coordinates of stations within the WRF domain, these points 
     ; will be used for interpolating the WRF data
-    npoints = num(midas_stns@indomain)  ; Number of stations in domain
-    lon = new( npoints, float)          ; Create new lat,lon arrays
+    npoints = num(midas_stns@indomain)  ; number of stations in domain
+    lon = new( npoints, float)          ; create new lat,lon arrays
     lat = new( npoints, float)          ;
+    ntimes  = dimsizes(midas_data(0,0,:))   ; get length of time dimension
+    obs = new( (/npoints, ntimes/), float ) ; create obs array, used in
+                                            ; nvars loop (see below)
 
-    il = 0    ; lat,lon counter (result)
-    is = 0    ; station counter (input)
-    do while(il.lt.npoints) ; get lat,lon for all stations in domain
-      if(midas_stns@indomain(is)) then  ; station in domain?
-        lon(il) = midas_stns@lon(is)    ; use longitude
-        lat(il) = midas_stns@lat(is)    ; use latitude
-        il=il+1                         ; prepare for next lat,lon
-      end if
-      is=is+1                           ; next station
-    end do
+    ; This method is unecessary, see replacement
+    ;il = 0    ; lat,lon counter (result)
+    ;is = 0    ; station counter (input)
+    ;do while(il.lt.npoints) ; get lat,lon for all stations in domain
+      ;if(midas_stns@indomain(is)) then  ; station in domain?
+        ;lon(il) = midas_stns@lon(is)    ; use longitude
+        ;lat(il) = midas_stns@lat(is)    ; use latitude
+        ;il=il+1                         ; prepare for next lat,lon
+      ;end if
+      ;is=is+1                           ; next station
+    ;end do
+    ; replacement method, no loop
+    istns = ind(midas_stns@indomain)
+    lon = midas_stns@lon(istns)  ; lon for stns in domains
+    lat = midas_stns@lat(istns)  ; lat for stns in domains
 
     ; Get lat,lon this is the same for all variables
     ; (unless we read from the staggered grids, and  why would we do
     ; that?)
     wrf_lon = wrf_user_getvar(f_wrf,"XLONG",1) ;
     wrf_lat = wrf_user_getvar(f_wrf,"XLAT",1)  ;
-    do iv=0,nvars-1
-      ; INDEXING WITH i!!! this is index for station id !!!
+
+    wks = gsn_open_wks("pdf","test_"+NAMES_TEST(i))
+
+    do iv=0,nvars-1       ; For each variable
       ; Read from files
       if( VAR_WRF(iv).eq."u10dir" ) then      ; In some cases, e.g. wind direction
-        wrf_data = get_wrf_u10dir(f_wrf)  ; we need to preprocess the data before
+        wrf_data = get_wrf_u10dir(f_wrf)      ; we need to preprocess the data before
       else if( VAR_WRF(iv).eq."u10spd" ) then ; interpolating to stations
-       wrf_data = get_wrf_u10spd(f_wrf)
-      else
+       wrf_data = get_wrf_u10spd(f_wrf)       ; such as for udir and uspd (this list is incomplete)
+      else                                ; Other variables can be read directly
        wrf_data = wrf_user_getvar(f_wrf,VAR_WRF(iv),-1) ; load wrf field (all times)
       end if
       end if 
+      ; Interpolate wrf data to stations
       wrf_data@lon=wrf_lon  ; Store latitude and longitude as attributes
       wrf_data@lat=wrf_lat  ; (required for get_wrf_var_in_ll)
-      wrf_int = get_wrf_var_in_ll(wrf_data,VAR_WRF(iv),lat,lon) ; interpolate wrf data
-      delete(wrf_int)
-    end do
+      ; Interpolate wrf_data to station locations and transpose to [stn,time]
+      wrf_int = transpose(get_wrf_var_in_ll(wrf_data,VAR_WRF(iv),lat,lon))
+      ; Select midas data for current variable, and the relevant stations:
 
-    ; Test interpolated wrf data by ploting:
-      wks   = gsn_open_wks ("pdf","xy")                  ; open workstation
-      res                   = True                       ; plot mods desired
-      res@tiMainString      = "Profile Plot"             ; add title
-      res@trYReverse        = True                       ; reverse Y-axis
-      res@xyDashPatterns    = 15                         ; choose dash patterns
+      obs = midas_data(istns,iv,:) ; gives [stn,time]
 
-      t=new(dimsizes(wrf_data(:,1)),float)
-      j=1
-      do while(j.lt.dimsizes(t))
-        t(j) = j
-        j=j+1
-      end do
-      plot  = gsn_csm_xy (wks,t,wrf_data(:,1),res) ; create plot
+      ; Send midas and wrf data to ptaylor for analysis
+      ptaylor(wks,wrf_int,obs,VAR_WRF(iv))
+    end do  ; nvars
 
-    ; The following should loop over variables
-    wrf_data = wrf_user_getvar(f_wrf,VAR_WRF(0),-1) ; 
-    print(dimsizes(wrf_list))
-    printVarSummary(wrf_data)
+
+    delete(wks)
     
-    i=i+1
-  end do
+    ;i=i+1
+  end do ; nlists
   
   print("Finished reading files")
 

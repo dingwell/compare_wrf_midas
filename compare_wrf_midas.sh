@@ -114,6 +114,8 @@ echo $fnames
   # Change | to , and @(...) to (/.../) using sed:
   ncl_midas_times=$(echo $times_midas | sed 's/|/,/g' | sed 's;@(\(.*\));(/\1/);g')  
   ncl_line=$ncl_line'\nTIMES = '$ncl_midas_times
+  ncl_names_test=$(echo $data_dirs | sed 's;./;";g' | sed 's; ;", ;g')
+  ncl_line=$ncl_line'\nNAMES_TEST = (/ '$ncl_names_test'" /)'
 
   echo -e '\nContents of '$NCLlist':'
   echo -e $ncl_line
