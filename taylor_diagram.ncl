@@ -293,9 +293,11 @@ if (rOpts .and. isatt(rOpts,"centerDiffRMS") \
 respl                    = True                ; polyline mods desired
 respl@xyLineThicknessF   = 1.0                 ; line thickness
 respl@xyLineDashPattern  = 2                   ; short dash lines
-respl@gsLineColor        = "Black"             ; line color     
 if (isatt(rOpts,"centerDiffRMS_color")) then
-respl@gsLineColor    =  "LightGray"
+;respl@gsLineColor    =  "LightGray"              ; WRONG!
+respl@gsLineColor    =  rOpts@centerDiffRMS_color ; right
+else
+respl@gsLineColor        = "black"             ; line color     
 end if
 
 dx   = 0.25
@@ -384,7 +386,7 @@ gsRes@gsMarkerColor   = Colors(n)              ; marker color
 ptRes@txFontColor     = gsRes@gsMarkerColor
 do i=0,nVar-1
 dum10(n*nVar+i) = gsn_add_polymarker(wks,taylor,X(n,i),Y(n,i),gsRes) 
-print("X(n,i) = " + X(n,i) + " " + "Y(n,i) = " + Y(n,i)) 
+;print("X(n,i) = " + X(n,i) + " " + "Y(n,i) = " + Y(n,i)) 
 dum11(n*nVar+i) = gsn_add_text(wks,taylor,(i+1),X(n,i),Y(n,i)+markerTxYOffset,ptRes)
 end do
 end do

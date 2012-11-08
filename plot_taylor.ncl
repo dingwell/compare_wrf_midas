@@ -11,8 +11,10 @@
 ;-----------------------------------------------------------;
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
+;load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/wrf/WRFUserARW.ncl"
-load "$HOME/ncl/taylor_diagram.ncl" ; for Taylor diagrams
+
+load "./taylor_diagram.ncl" ; for Taylor diagrams
 load "$HOME/ncl/io_utils.ncl" ; reading station data & descr 
 load "./auto_presets.ncl"     ; List of wrf-file-lists
 ;-----------------------------------------------------------;
@@ -258,8 +260,14 @@ begin
   delete([/year,month,day,doy/])
 
   do i=0,nstations-1              ; for each station
+    print("Processing station: "+tostring(stations(i)))
     fname = "midas_"+stations(i)+"_"+START_DATE(0)+".dat"
     table = asciiread(fpath+fname,-1,"string")  ; Read station file
+
+    if(all(ismissing(table))) then
+      print("Warning: no data found in file: "+fname)
+    end if
+
     if( sum(dimsizes(table)) .eq. 1 ) then        ; If file is empty
       delete(table) ; Delete files data (1 fillValue) and
       continue      ; move to next iteration, leaving current station
@@ -272,20 +280,35 @@ begin
     day   = stringtoint(str_get_field(table(0::), 3, ","))
 
     doy_all = day_of_year(year,month,day)
-    iobs = ind( doy_all .gt. data&DayOfYear(0) .and.  \
+    iobs = ind( doy_all .ge. data&DayOfYear(0) .and.  \
                 doy_all .lt. data&DayOfYear(ntimes-1) ) ; find relevant obs
 
     ; We can now use iobs to extract the relevant rows from table
     hour  = stringtoint(str_get_field(table(iobs), 4, ","))
     doy   = doy_all(iobs)+hour/24.
 
-    ; There is still one more problem to fix: missing data. When there are
-    ; no observations, there is no entry. We need to find the missing lines
-    ; and assign the corresponding entries in 'data' to fillValues.
-    ; We will tackle this by assigning values using doy as index
-
     do j=0,nvar-1                 ; load each variable to data
+      print("Trying to read variable no. "+tostring(j)+\
+            " (column: "+tostring(VAR_MIDAS(j))+")"   +\
+            " (WRF-var: "+VAR_WRF(j)+")" )
+      ; We will only insert values for points with data, the others are left as _FillValue
       data(i,j,{doy}) = stringtofloat(str_get_field(table(iobs),VAR_MIDAS(j), ","))
+
+      ; Convert to WRF units:
+      if(VAR_WRF(j).eq."T2") then    ; 2m temperature should be in K
+        data(i,j,{doy}) = data(i,j,{doy})+273.15
+      end if
+        
+      ; Replace nan with _FillValue 
+      if (any(isnan_ieee(data))) then
+        replace_ieeenan (data, data@_FillValue, 0)
+      end if
+      print("Mean = "+tostring(avg(data(i,j,:))))
+      ;print(i)
+      ;print(table(iobs(0)))
+      ;print(data(i,j,{doy}))
+      ;print(VAR_MIDAS(j))
+      ;print("Done reading variable")
     end do  ;variables
     delete([/table,year,month,day,doy,doy_all,hour,iobs/])
   end do  ;stations
@@ -377,7 +400,7 @@ end
 undef("ptaylor")
 procedure ptaylor(wks,ts,ts0,title)
 local dims,dims0,tts,tts0,cts,cts0,var,var0,\
-      cc,ratio,                             \
+      cc,ratio,plot,nonzero,                \
       nsets,npts,                           \
       res
 begin
@@ -406,7 +429,12 @@ begin
   ; Calculate the ratio of the (standardized) variances
   var   = dim_variance_Wrap(tts)  ; calc. variance over rightmost dim (Time)
   var0  = dim_variance_Wrap(tts0) ; result: 1-D [Stations]
-  ratio(0,:) = var/var0  ; ratio of variances (relative reference)
+  nonzero = ind(var0.ne.0)
+  if(.not.any(ismissing(nonzero))) then
+    ratio(0,nonzero) = var(nonzero)/var0(nonzero)  ; ratio of variances (relative reference)
+  else
+    print("Warning: missing data for field: "+title)
+  end if
 
   ; The rest is mainly from taylor_2.ncl found at:
   ; http://www.ncl.ucar.edu/Applications/taylor.shtml
@@ -422,15 +450,103 @@ begin
 
   res@stnRad          = (/ 0.5, 1.5 /)     ; additional standard radii
   res@ccRays          = (/ 0.6, 0.9 /)     ; correllation rays
-  ;res@ccRays_color    = (/210,0,0/)       ; default is "black", setting doesn't work
+  ;res@ccRays_color    = (/130,130,130/)    ; default is "black", setting doesn't work
 
   res@centerDiffRMS   = True               ; RMS 'circles'
-  ;res@centerDiffRMS_color = "black"    ; default is "black"
+  ;res@centerDiffRMS_color = (/100,1,100/)   ; default is "black"
 
   plot = taylor_diagram(wks,ratio,cc,res)
   ; TODO
   ; set name of figure
 
+end
+
+; Procedure to show station locations in wrf
+; domain.  stations must have attributes
+; @lat and @lon assigned
+undef("ppos_in_domain")
+procedure ppos_in_domain(wks,f_wrf,stations)
+local res, mpres,pres,lres, \
+      npoints,              \
+      i,                    \
+      points,labels,map
+begin
+  npoints=dimsizes(stations)
+
+  ; General settings
+  res                   = True
+  res@tiMainString      = "Available stations"
+
+  ; Contour settings
+  mres                  = res
+  
+  ; Point settings
+  pres                  = res
+  pres@gsMarkerIndex    = 16                ; filled dot
+  pres@gsMarkerSizeF    = 0.005             ; default: 0.007
+  points  = new(npoints,graphic)
+
+  ; Label settings
+  lres                  = res
+  lres@txFontHeightF    = 0.015
+  lres@txJust           = "TopLeft"
+  labels  = new(npoints,graphic)
+
+  ; Create map
+  map = wrf_map(wks,f_wrf[0],mres)
+
+  ; Overlay map with points (station positions)
+  do i=0,npoints-1
+    points(i) = gsn_add_polymarker(wks,map,                \
+                stations@lon(i),stations@lat(i),pres)
+
+    ; Different color of station names if they are included in statistics
+    if(stations@indomain(i)) then
+      lres@txFontColor      = "Green"
+    else
+      lres@txFontColor      = "Red"
+    end if
+    labels(i) = gsn_add_text(wks,map,"  "+tostring(stations(i)),\
+                stations@lon(i),stations@lat(i),lres)
+  end do
+
+  draw(map)
+  frame(wks)
+end
+
+undef("ptime_series")
+procedure ptime_series(wks,ts,ts0,vname)
+local res,nstns,istns,colors
+begin
+  nstns = dimsizes(ts(:,0))
+  colors = new(nstns,integer)
+  do istns=0,nstns-1
+    colors(istns)=istns
+  end do
+
+  res                   = True
+  res@tiMainString      = "Deviation from observation "+vname
+  res@xyDashPattern     = 15
+  res@xyLineThicknessF  = 2.0
+  res@xyLineColors      = colors
+  ;res@xyLineDashSegLenF = 
+  x = ts0&DayOfYear
+  y = ts-ts0
+  xlabel = "Day of Year"
+  print(y)
+  print(x)
+
+  ;print(ts)
+  ;print(ts0)
+  ;printVarSummary(ts0)
+  ;printVarSummary(ts)
+  ;printVarSummary(y)
+  ;printVarSummary(x)
+  ;printVarSummary(colors)
+  ;print(max(ts0))
+  ;print(max(ts))
+  ;print(ts0)
+  plot = gsn_csm_xy(wks,x,y,res)
 end
 
 begin;MAIN;
@@ -467,11 +583,15 @@ begin;MAIN;
   ;TODO load midas data fields and station coordinates
   midas_stns = read_station_list()    ; get available midas stations
   midas_data = read_station_data(midas_stns)
+  ;printVarSummary(midas_data)
+  ;print(midas_data(0,:,0:6))
 
   do i=0,nlists-1   ; For each set of WRF-data
     ; Set up files
     wrf_list = asciiread( LISTS(i),-1,"string") ; load first file-list to EOF
+    ;print(wrf_list)
     f_wrf = addfiles( wrf_list,"r" )            ; open the wrf files
+    print("Processing "+LISTS(i)+":")
 
     ; Check which stations are within the domain:
     midas_stns@indomain = indomain(f_wrf,midas_stns@lon,midas_stns@lat)
@@ -508,29 +628,47 @@ begin;MAIN;
     wrf_lon = wrf_user_getvar(f_wrf,"XLONG",1) ;
     wrf_lat = wrf_user_getvar(f_wrf,"XLAT",1)  ;
 
+    ; Prepare workstation for plotting
     wks = gsn_open_wks("pdf","test_"+NAMES_TEST(i))
+    gsn_define_colormap(wks,"BkBlAqGrYeOrReViWh200")
+    
+    ; First plot an overview of the current domain
+    ppos_in_domain(wks,f_wrf,midas_stns)
 
     do iv=0,nvars-1       ; For each variable
+      print("Variable "+VAR_WRF(iv)+":")
       ; Read from files
+      print("Attempt to read WRF file")
       if( VAR_WRF(iv).eq."u10dir" ) then      ; In some cases, e.g. wind direction
         wrf_data = get_wrf_u10dir(f_wrf)      ; we need to preprocess the data before
       else if( VAR_WRF(iv).eq."u10spd" ) then ; interpolating to stations
-       wrf_data = get_wrf_u10spd(f_wrf)       ; such as for udir and uspd (this list is incomplete)
+        wrf_data = get_wrf_u10spd(f_wrf)       ; such as for udir and uspd (this list is incomplete)
       else                                ; Other variables can be read directly
-       wrf_data = wrf_user_getvar(f_wrf,VAR_WRF(iv),-1) ; load wrf field (all times)
+        wrf_data = wrf_user_getvar(f_wrf,VAR_WRF(iv),-1) ; load wrf field (all times)
       end if
       end if 
+      print("Mean value: "+tostring(avg(wrf_data)))
+      print("done")
       ; Interpolate wrf data to stations
       wrf_data@lon=wrf_lon  ; Store latitude and longitude as attributes
       wrf_data@lat=wrf_lat  ; (required for get_wrf_var_in_ll)
       ; Interpolate wrf_data to station locations and transpose to [stn,time]
+      print("Interpolating WRF data")
       wrf_int = transpose(get_wrf_var_in_ll(wrf_data,VAR_WRF(iv),lat,lon))
+      print("done")
       ; Select midas data for current variable, and the relevant stations:
 
       obs = midas_data(istns,iv,:) ; gives [stn,time]
 
       ; Send midas and wrf data to ptaylor for analysis
+      print("Calling ptaylor")
       ptaylor(wks,wrf_int,obs,VAR_WRF(iv))
+      print("done")
+      ; Plot time series:
+  ;print(VAR_WRF(iv))
+      print("Calling ptime_series")
+      ptime_series(wks,wrf_int,obs,VAR_WRF(iv))
+      print("done")
     end do  ; nvars
 
 
@@ -541,22 +679,6 @@ begin;MAIN;
   
   print("Finished reading files")
 
-  ;TESTING
-    ;; CHECK IF INDOMAIN() IS WORKING -ok
-  ;wrf_list = asciiread( LISTS(0),-1,"string") ; load first file-list to EOF
-  ;print(wrf_list(0))
-  ;f_wrf = addfile( wrf_list(0),"r" )   ; open the first wrf file
-  ; f_wrf = addfiles( wrf_list,"r" )   ; open multiple files, supported by ll_to_ij
-  ;a=indomain(f_wrf,-18.083,65.683)   
-  ;print(a)
-    ;; CHECK IF READ_STATION_LIST IS WORKING
-  ;stat = read_station_list()
-  ;print(stat)
-  ;printVarSummary(stat)
-  ;print(stat@lon)
-    ;; COMBINE:
-  ;b=indomain(f_wrf,stat@lon,stat@lat)
-  ;print(b)
 end
 
 ;  wrf_list
