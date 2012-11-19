@@ -37,5 +37,6 @@ plot_taylor.ncl
 taylor_diagram.ncl
   Low level plot function for Taylor diagrams, it is provided by UCAR:
   http://www.ncl.ucar.edu/Applications/taylor.shtml
-  I've made some modifications, but the function run just fine without them
+  I've made some modifications to how it handles different colors, changes
+  are marked by "AD" in the comments
 

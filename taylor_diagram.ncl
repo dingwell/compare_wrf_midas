@@ -383,8 +383,12 @@ dum11 = dum10
 do n=0,nCase-1
 gsRes@gsMarkerIndex   = Markers(n)             ; marker style (+)
 gsRes@gsMarkerColor   = Colors(n)              ; marker color
+;print(gsRes@gsMarkerColor)
 ptRes@txFontColor     = gsRes@gsMarkerColor
 do i=0,nVar-1
+  ; AD The following 2 lines was added to support one color per station (ugly fix)
+  gsRes@gsMarkerColor   = Colors(i)              ; marker color
+  ptRes@txFontColor     = gsRes@gsMarkerColor
 dum10(n*nVar+i) = gsn_add_polymarker(wks,taylor,X(n,i),Y(n,i),gsRes) 
 ;print("X(n,i) = " + X(n,i) + " " + "Y(n,i) = " + Y(n,i)) 
 dum11(n*nVar+i) = gsn_add_text(wks,taylor,(i+1),X(n,i),Y(n,i)+markerTxYOffset,ptRes)
@@ -458,6 +462,10 @@ do i = 1,nVar
 if (i.eq.1) then
 dum12 = new(nVar,graphic)
 end if
+
+  ; AD The following line was added to support one color per station (ugly fix)
+  txres@txFontColor   = Colors(i-1)              ; marker color
+  ;print(txres@gsFontColor)
 
 dum12(i-1) = gsn_add_text(wks,taylor,i+" - "+rOpts@varLabels(i-1), .125,ys,txres)
 ys = ys- delta_y

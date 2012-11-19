@@ -1,4 +1,3 @@
-;-----------------------------------------------------------;
 ; This script will load data from WRF output and midas      ;
 ; observation data.  WRF data will be interpolated to the   ;
 ; observation sites and performance tested in Taylor plots  ;
@@ -61,7 +60,7 @@ begin;PRESETS;
   ; "u10dir" and "u10spd" are not in wrfout, in order to get
   ; these, we use get_wrf_u10dir and get_wrf_u10spd instead
   ; (included in this script
-  VAR_WRF = (/"u10dir","u10spd","T2","td2","slp","RAINNC"/)
+  VAR_WRF = (/"u10dir","u10spd","T2","td2","slp","PRECIP_H"/)
   VAR_MIDAS = (/6,7,16,17,18,20/)
 
   ; Observation times in MIDAS data:
@@ -93,25 +92,6 @@ end;PRESETS;
 ;   7     ptaylor             plot taylor diagrams midas agains 1 WRF run
 ;
 ;   x     MAIN                the main program
-
-;undef("load_first_wrf")
-;function load_first_wrf(wrflists) ; Primarily used for testing, may be removed later on...
-;local wrf_list, wrf, n_latxlon
-;begin
-  ;wrf_list = asciiread( lists(0),-1,"string") ; load first file-list to EOF
-  ;wrf = wrf_list(0)                       ; Current file name
-  ;wrf@file   = addfile( wrf_list(0),"r" )   ; open the first wrf file
-  ;wrf@lat = wrf_user_getvar(f_wrf,"XLAT",0)    ; read lat
-  ;wrf@lon = wrf_user_getvar(f_wrf,"XLONG",0)   ; read lon
-  ;n_latxlon   = dimsizes(lat)
-  ;wrf@n_lat = wrf@n_latxlon(0)    ;used in Read midas data
-  ;wrf@n_lon = wrf@n_latxlon(1)    ;used in Read midas data
-;
-  ;wrf@U = wrf_user_getvar(f_wrf,"U",0)    ; just for testing
-;
-  ;return wrf
-;end
-
 
 ; Function used to determine the closest WRF grid point for a given
 ; WRF netCDF file and a set ll-coordinates.  The function will return
@@ -359,20 +339,21 @@ end
 
 undef("get_wrf_u10dir")
 function get_wrf_u10dir(f_wrf)
-local uvmet10,r2d,dir
+local u10,v10,r2d,dir,i
 begin
   ; load 10m u,v-components on massgrid, rotated to Earth coordinate
-  uvmet10 = wrf_user_getvar(f_wrf,"uvmet10",-1)
+  u10 = wrf_user_getvar(f_wrf,"U10",-1)
+  v10 = wrf_user_getvar(f_wrf,"V10",-1)
   r2d = 45.0/atan(1.0)  ; conversion factor (radians to degrees)
 
   ; We use atan2 instead of atan since plain atan is not able
   ; to determine direction completely (sometimes 180 degrees off)
-  dir = atan2(uvmet10(0,:,:,:),uvmet10(1,:,:,:))  ; horiz. wind dir
+  dir = atan2(u10,v10)*r2d+180  ; horiz. wind dir
 
   ; Set dimension names
-  dir!0 = uvmet10!1
-  dir!1 = uvmet10!2
-  dir!2 = uvmet10!3
+  dir!0 = u10!0
+  dir!1 = u10!1
+  dir!2 = u10!2
   return dir
 end
 
@@ -381,14 +362,31 @@ function get_wrf_u10spd(f_wrf)
 local uvmet10,spd
 begin
   ; load 10m u,v-components on massgrid, rotated to Earth coordinate
-  uvmet10 = wrf_user_getvar(f_wrf,"uvmet10",-1)
-  spd = sqrt( uvmet10(0,:,:,:)^2 + uvmet10(0,:,:,:)^2 ) ; horiz. wind spd
+  u10 = wrf_user_getvar(f_wrf,"U10",-1)
+  v10 = wrf_user_getvar(f_wrf,"V10",-1)
+  spd = sqrt( u10^2 + v10^2 ) ; horiz. wind spd
 
   ; Set dimension names
-  spd!0 = uvmet10!1
-  spd!1 = uvmet10!2
-  spd!2 = uvmet10!3
-  return 0
+  spd!0 = u10!0
+  spd!1 = u10!1
+  spd!2 = u10!2
+  return spd
+end
+
+; Function to set color indices for stations
+undef("color_list")
+function color_list(wks,ts)
+local nstns,colors,cmap,nc,istns
+begin
+  nstns = dimsizes(ts(:,0))
+  colors = new(nstns,integer)
+  cmap = gsn_retrieve_colormap(wks)
+  nc = dimsizes(cmap)
+  do istns=0,nstns-1
+    colors(istns)=(nc(0)-1)*istns/(nstns)
+  end do
+  colors(0) = colors(0)+1
+  return colors
 end
 
 ; High level plot function for Taylor diagrams,
@@ -398,7 +396,7 @@ end
 ; ts is the test (estimated values) and ts0
 ; is the reference (observed values)
 undef("ptaylor")
-procedure ptaylor(wks,ts,ts0,title)
+procedure ptaylor(wks,ts,ts0,title,lbl)
 local dims,dims0,tts,tts0,cts,cts0,var,var0,\
       cc,ratio,plot,nonzero,                \
       nsets,npts,                           \
@@ -433,21 +431,25 @@ begin
   if(.not.any(ismissing(nonzero))) then
     ratio(0,nonzero) = var(nonzero)/var0(nonzero)  ; ratio of variances (relative reference)
   else
-    print("Warning: missing data for field: "+title)
+    print("Warning: missing data or all zero values for field: "+title)
+    print(var0)
   end if
+
+  colors=color_list(wks,ts)  ; Setup color indices
 
   ; The rest is mainly from taylor_2.ncl found at:
   ; http://www.ncl.ucar.edu/Applications/taylor.shtml
-
-  ; 
   res                 = True               ; diagram mods desired
   res@tiMainString    = title              ; title
-  res@Colors          = (/"black"/)        ; marker colors
+  ;res@Colors          = (/"black"/)        ; marker colors
+  res@Colors          = colors      ; Note: this is supposed to be one per case
+                                    ; however, I modified taylor_diagram to treat
+                                    ; is one per variable (since each station is given
+                                    ; as a variable)
   res@Markers         = (/14,9/)           ; marker styles
   res@markerTxYOffset = 0.04               ; offset btwn marker & label
   res@gsMarkerSizeF   = 0.01               ; marker size   
   res@txFontHeightF   = 0.015              ; text size 
-
   res@stnRad          = (/ 0.5, 1.5 /)     ; additional standard radii
   res@ccRays          = (/ 0.6, 0.9 /)     ; correllation rays
   ;res@ccRays_color    = (/130,130,130/)    ; default is "black", setting doesn't work
@@ -455,6 +457,15 @@ begin
   res@centerDiffRMS   = True               ; RMS 'circles'
   ;res@centerDiffRMS_color = (/100,1,100/)   ; default is "black"
 
+  ; Labels:
+  res@varLabels    = lbl
+  res@varLabelsYloc= 1.5
+  ;res@caseLabels   = case
+
+
+  print(dimsizes(ratio))
+  print(dimsizes(ratio))
+  print(dimsizes(ratio))
   plot = taylor_diagram(wks,ratio,cc,res)
   ; TODO
   ; set name of figure
@@ -516,39 +527,58 @@ end
 
 undef("ptime_series")
 procedure ptime_series(wks,ts,ts0,vname)
-local res,nstns,istns,colors
+local res,nstns,istns,colors,cmap,nc,x,y
 begin
-  nstns = dimsizes(ts(:,0))
-  colors = new(nstns,integer)
-  do istns=0,nstns-1
-    colors(istns)=istns
-  end do
+  colors=color_list(wks,ts)  ; Setup color indices
 
   res                   = True
   res@tiMainString      = "Deviation from observation "+vname
   res@xyDashPattern     = 15
   res@xyLineThicknessF  = 2.0
   res@xyLineColors      = colors
+  res@xyMarkLineMode    = "MarkLines"
+  res@xyMarkerColors    = colors
   ;res@xyLineDashSegLenF = 
   x = ts0&DayOfYear
   y = ts-ts0
-  xlabel = "Day of Year"
-  print(y)
-  print(x)
+  res@tiXAxisString     = "Day of Year"
 
-  ;print(ts)
-  ;print(ts0)
-  ;printVarSummary(ts0)
-  ;printVarSummary(ts)
-  ;printVarSummary(y)
-  ;printVarSummary(x)
-  ;printVarSummary(colors)
-  ;print(max(ts0))
-  ;print(max(ts))
-  ;print(ts0)
   plot = gsn_csm_xy(wks,x,y,res)
 end
 
+undef("pscatter")
+procedure pscatter(wks,ts,ts0,vname)
+local res,nstns,istns,colors,cmap,nc,x,y, \
+      axmin,axmax
+begin
+  colors=color_list(wks,ts)  ; Setup color indices
+
+  res                   = True
+  res@tiMainString      = vname+"-scatter"
+  res@tiXAxisString     = "Observed"
+  res@tiYAxisString     = "Calculated"
+  ;res@xyDashPattern     = 15
+  ;res@xyLineThicknessF  = 2.0
+  ;res@xyLineColors      = colors
+  res@xyMarkLineMode    = "Markers"
+  res@xyMarkerColors    = colors
+  ;res@xyLineDashSegLenF = 
+  x = ts0
+  y = ts
+
+  axmin=min((/x,y/))
+  axmax=max((/x,y/))
+  if((axmin.gt.0).and.(axmin.lt.100))
+    axmin = 0
+  end if
+  res@trYMinF           = axmin
+  res@trXMinF           = res@trYMinF
+  res@trYMaxF           = axmax
+  res@trXMaxF           = res@trYMaxF
+
+  res@tmEqualizeXYSizes     = True
+  plot = gsn_csm_xy(wks,x,y,res)
+end
 begin;MAIN;
   ; VARIABLES
   ;-------------------FILES AND PATHS---------------------------
@@ -637,16 +667,27 @@ begin;MAIN;
 
     do iv=0,nvars-1       ; For each variable
       print("Variable "+VAR_WRF(iv)+":")
+
+      ; Select midas data for current variable, and the relevant stations:
+      obs = midas_data(istns,iv,:) ; gives [stn,time]
+
       ; Read from files
       print("Attempt to read WRF file")
       if( VAR_WRF(iv).eq."u10dir" ) then      ; In some cases, e.g. wind direction
         wrf_data = get_wrf_u10dir(f_wrf)      ; we need to preprocess the data before
       else if( VAR_WRF(iv).eq."u10spd" ) then ; interpolating to stations
-        wrf_data = get_wrf_u10spd(f_wrf)       ; such as for udir and uspd (this list is incomplete)
+        wrf_data = get_wrf_u10spd(f_wrf)      ; such as for udir and uspd (this list is incomplete)
+      else if( VAR_WRF(iv).eq."PRECIP_H" )  ; This is a custom diagnostic field
+        ;print(dimsizes(wrf_user_getvar(f_wrf,VAR_WRF(iv),-1)))
+        ;print(dimsizes(wrf_data))
+        ;wrf_data = wrf_user_getvar(f_wrf,VAR_WRF(iv),-1)*10 ; Hourly precip [1/10 mm]
+        wrf_data = wrf_user_getvar(f_wrf,VAR_WRF(iv),-1)
+        obs = obs/10.0 ; Hourly precip [mm]
       else                                ; Other variables can be read directly
         wrf_data = wrf_user_getvar(f_wrf,VAR_WRF(iv),-1) ; load wrf field (all times)
       end if
       end if 
+      end if
       print("Mean value: "+tostring(avg(wrf_data)))
       print("done")
       ; Interpolate wrf data to stations
@@ -656,18 +697,37 @@ begin;MAIN;
       print("Interpolating WRF data")
       wrf_int = transpose(get_wrf_var_in_ll(wrf_data,VAR_WRF(iv),lat,lon))
       print("done")
-      ; Select midas data for current variable, and the relevant stations:
 
-      obs = midas_data(istns,iv,:) ; gives [stn,time]
+      ; Extra processing before plotting
+      if( VAR_WRF(iv).eq."u10dir" ) then      ; In some cases, e.g. wind direction
+        ; Check for wind speeds around 0 degrees (need to fix these for some plots)
+        do is=0,dimsizes(istns)-1
+          ddir = obs(is,:)-wrf_int(is,:)
+          print("-------")
+          print(dimsizes(ddir))
+          print(dimsizes(obs(is,:)))
+          print(max(ddir))
+          print(min(ddir))
+          obs(is,:) = where(ddir.gt.180,obs(is,:)-360,obs(is,:))
+          obs(is,:) = where(ddir.lt.-180,obs(is,:)+360,obs(is,:))
+          ddir = obs(is,:)-wrf_int(is,:)
+          print(max(ddir))
+          print(min(ddir))
+        end do
+      end if
 
       ; Send midas and wrf data to ptaylor for analysis
       print("Calling ptaylor")
-      ptaylor(wks,wrf_int,obs,VAR_WRF(iv))
+      ptaylor(wks,wrf_int,obs,VAR_WRF(iv),midas_stns(istns))
       print("done")
       ; Plot time series:
   ;print(VAR_WRF(iv))
       print("Calling ptime_series")
       ptime_series(wks,wrf_int,obs,VAR_WRF(iv))
+      print("done")
+      ; Plot Scatter:
+      print("Calling pscatter")
+      pscatter(wks,wrf_int,obs,VAR_WRF(iv))
       print("done")
     end do  ; nvars
 
