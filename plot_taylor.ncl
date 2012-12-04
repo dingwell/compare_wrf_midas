@@ -586,14 +586,13 @@ begin;MAIN;
   ;-------------------LENGTH VARIABLES--------------------------
   ; nfiles        number of wrfout files (should equal ntimes)
   ; nlists        number of wrf runs (ie no. of file lists)
-; ; ntimes        length of 'Times' in wrf variable
+  ; ntimes        length of 'Times' in wrf variable
   ; nvars         number of fields to check
   ;-------------------ITERATION COUNTERS------------------------
   ; i             main loop, iterates over nlists
-  ; ;il            index for current stn (lon,lat within domain)
-  ; ;is            index for current stn (all)
   ; iv            index current variable, iterates over nvars
   ; istns         index list for stations within domain
+  ; is            index for current stn (only indomain)
   ;-------------------DATA--------------------------------------
   ; wrf_data      current data field from WRF
   ; wrf_int       interpolated wrf data
@@ -733,6 +732,7 @@ begin;MAIN;
 
 
     delete(wks)
+    delete([/wrf_data,wrf_lat,wrf_lon/])
     
     ;i=i+1
   end do ; nlists
