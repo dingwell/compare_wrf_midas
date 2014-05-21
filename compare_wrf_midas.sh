@@ -10,16 +10,15 @@
 #   variables outside the section labeled PRESETS
 
 #-- BEGIN PRESETS --#
-data_dirs=" ./neurope1
-            ./neurope2"
+data_dirs=" ./neurope5"
 #data_dirs=" ./wsm3
 #            ./wsm5
 #            ./wsm6
 #            ./thompson"
 path_midas='"$HOME/data/obs/midas"'
 domains="d02"   # currently only supports one entry
-start_date="2010-01-02"
-end_date="2010-01-30"
+start_date="2010-06-02"
+end_date="2010-06-07"
 times_midas='@(00|03|06|09|12|15|18|21)'  # MIDAS observation times
 #--  END PRESETS  --#
 

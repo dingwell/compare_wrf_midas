@@ -30,6 +30,15 @@ compare_wrf_midas.sh
   end of the script, the main reason I haven't done is for faster testing
   of the individual scripts
 
+get_stns.sh
+  Tool to extract specific stations from several midas data files.
+  The files can be either pure ascii or compressed with gzip, if gzip
+  is used, the data will be uncompressed, filtered through bash and 
+  written to separate files for each station.  All on the fly using 
+  zcat, grep and process substitution.
+  (I haven't tested this for files larger than ~300 MB but it seems
+  to be quite memory friendly)
+
 plot_taylor.ncl
   NCL script to create the actual plots
   Run this after list_wrf_files.sh

@@ -696,12 +696,17 @@ begin;MAIN;
       print("Interpolating WRF data")
       wrf_int = transpose(get_wrf_var_in_ll(wrf_data,VAR_WRF(iv),lat,lon))
       print("done")
+      if( dimsizes(wrf_int(0,:)).ne.dimsizes(obs(0,:)) ) then
+        print("Error: record length of WRF data and/or MIDAS data")
+        print("       do not match time period in compare_wrf.sh")
+      end if
 
       ; Extra processing before plotting
       if( VAR_WRF(iv).eq."u10dir" ) then      ; In some cases, e.g. wind direction
         ; Check for wind speeds around 0 degrees (need to fix these for some plots)
         do is=0,dimsizes(istns)-1
           ddir = obs(is,:)-wrf_int(is,:)
+          print("1")
           print("-------")
           print(dimsizes(ddir))
           print(dimsizes(obs(is,:)))
