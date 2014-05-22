@@ -33,7 +33,7 @@ compare_wrf_midas.sh
 get_stns.sh
   Tool to extract specific stations from several midas data files.
   The files can be either pure ascii or compressed with gzip, if gzip
-  is used, the data will be uncompressed, filtered through bash and 
+  is used, the data will be uncompressed, filtered through grep and 
   written to separate files for each station.  All on the fly using 
   zcat, grep and process substitution.
   (I haven't tested this for files larger than ~300 MB but it seems

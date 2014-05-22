@@ -74,48 +74,13 @@ for f in $FILES; do
   fi
   #exit
 done
-  #STR='zcat $f|tee <(grep '"$(echo $STATIONS|sed 's/ \([0-9]\)/>) <(\1/g')"|grep error
-  #STR='zcat $f|tee <(grep '"$(echo $STATIONS|sed 's/ \([0-9]\)/>) <(\1/g')"')|grep error
-  #eval 'zcat
-  #zcat $f|tee <(grep 
 
+# Finalize by inserting nans over missing values
+echo "Filling missing values (nan)"
+for i in $STATIONS; do
+  echo $i
+  mv $i.txt $i.txt.bak
+  cat $i.txt.bak | sed 's/, ,/, nan,/g' | sed 's/, ,/, nan,/g' > $i.txt
+  rm $i.txt.bak
+done
 
-
-exit
-# SCRATCH:
-DATE_START=197401     # (YYYYMM)
-DATE_END=197412       # (YYYYMM)
-SEC_END=$(date --utc -d "$DATE_END" +%s)
-DATE_CURRENT_START=$START_DATE
-DATE_CURRENT_END=$START_DATE
-SEC_CURRENT_START=$(date --utc -d "$DATE_CURRENT_START" +%s)
-#while [ $SEC_CURRENT_START -lt $SEC_END ]; do
-#  $SEC_CURRENT_START=$(date --utc -d "$DATE_CURRENT_START" +%s)
-#done
-#echo $FILES"
-#exit
-       
-
-#for i in $@; do
-#  ./get_midas_stations.pl
-
-
-./get_midas_stations.pl midas_glblwx-europe_201001-201012.txt 17103
-./get_midas_stations.pl midas_glblwx-europe_201001-201012.txt 17104
-./get_midas_stations.pl midas_glblwx-europe_201001-201012.txt 17105
-./get_midas_stations.pl midas_glblwx-europe_201001-201012.txt 17106
-./get_midas_stations.pl midas_glblwx-europe_201001-201012.txt 19029
-./get_midas_stations.pl midas_glblwx-europe_201001-201012.txt 19030
-./get_midas_stations.pl midas_glblwx-europe_201001-201012.txt 23547
-./get_midas_stations.pl midas_glblwx-europe_201001-201012.txt 23548
-./get_midas_stations.pl midas_glblwx-europe_201001-201012.txt 23550
-./get_midas_stations.pl midas_glblwx-europe_201001-201012.txt 24238
-./get_midas_stations.pl midas_glblwx-europe_201001-201012.txt 24265
-./get_midas_stations.pl midas_glblwx-europe_201001-201012.txt 24319
-./get_midas_stations.pl midas_glblwx-europe_201001-201012.txt 24320
-./get_midas_stations.pl midas_glblwx-europe_201001-201012.txt 24432
-#./get_midas_stations.pl midas_glblwx-europe_201001-201012.txt 24403  # EMPTY!!
-#./get_midas_stations.pl midas_glblwx-europe_201001-201012.txt 23549  # EMPTY!!
-#./get_midas_stations.pl midas_glblwx-europe_201001-201012.txt 24242  # EMPTY!!
-#./get_midas_stations.pl midas_glblwx-europe_201001-201012.txt 24298  # EMPTY!!
-#./get_midas_stations.pl midas_glblwx-europe_201001-201012.txt 24402  # EMPTY!!
