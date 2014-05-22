@@ -36,8 +36,6 @@ get_stns.sh
   is used, the data will be uncompressed, filtered through grep and 
   written to separate files for each station.  All on the fly using 
   zcat, grep and process substitution.
-  (I haven't tested this for files larger than ~300 MB but it seems
-  to be quite memory friendly)
 
 plot_taylor.ncl
   NCL script to create the actual plots
@@ -49,3 +47,12 @@ taylor_diagram.ncl
   I've made some modifications to how it handles different colors, changes
   are marked by "AD" in the comments
 
+run_plot_wind_rose.sh
+  Tool to quickly plot wind roses for multiple stations
+
+plot_win_rose.ncl
+  NCL script to create a wind rose from midas data (should be run by run_plot_wind_rose.sh)
+
+utilities.ncl
+  Collection of functions, I aim to put most of the common ncl code in this file
+  there is still a lot of work needed though...
