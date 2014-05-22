@@ -18,15 +18,16 @@
 # is compressed using gzip.
 
 # GLOBAL VARIABLES:
-STATIONS="18341 18340 60276 20340 21084 20358 21097 17708 20326 20476 22558 22783 21097 20241 19705"
+#STATIONS="18341 18340 60276 20340 21084 20358 21097 17708 20326 20476 22558 22783 20241 19705"
+STATIONS="20797 21751 19466"
 #STATIONS="18341 18300"
 INPREFIX="midas_glblwx-africa_"
 #SUFFIX=".txt"
 SUFFIX=".txt.gz"
-#MATCH1=197401-197412  # Unique string in filename of first file to read
-#MATCH2=197501-197512  # Unique string in filename of last file ot read
 MATCH1=197401-197412  # Unique string in filename of first file to read
 MATCH2=201301-201312  # Unique string in filename of last file ot read
+#MATCH1=199101-199112
+#MATCH2=199201-199212
 
 # FUNCTIONS
 
@@ -61,7 +62,6 @@ for f in $FILES; do
   echo "$f"
 
   STR="$STR1$STR2$STR3$STR4"
-  #echo "STR: $STR"
 
   # Evaluate command string:
   eval "$STR"
