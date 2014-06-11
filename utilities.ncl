@@ -65,3 +65,29 @@ begin
 
     return data
 end
+;-----------------------------------------------------------;
+;                                                           ;
+;  Function to read a list of MIDAS stations, returning:    ;
+;  src_id, src_id@lat, src_id@lon                           ;
+;                                                           ;
+;  where src_id is a 1-D array of station identifiers       ;
+;  and the attributes lat and lon have the same dimensions  ;
+;                                                           ;
+; Written by:                                               ;
+;   Adam Dingwell, Uppsala University, 2012                 ;
+;-----------------------------------------------------------;
+undef("read_station_list")
+function read_station_list(fname)
+local fname,header,stations,table
+begin
+  table = asciiread(fname,-1,"string")  ; Read entire file to memory
+  stations = stringtoint(str_get_field(table(1::), 1, " ")); station id
+  stations@lat  = stringtofloat(str_get_field(table(1::),7," "));latitude
+  stations@lon  = stringtofloat(str_get_field(table(1::),8," "));longitude
+
+  ;header  = headerreadAsciiHead(infile, 1) ; header (first row)
+  ;stations = readAsciiTable(infile,1,"int",1) ; station ID
+  ;stations@lat = readAsciiTable(infile,
+
+  return stations
+end

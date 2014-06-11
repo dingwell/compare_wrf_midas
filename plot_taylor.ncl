@@ -12,9 +12,9 @@ load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
 ;load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/wrf/WRFUserARW.ncl"
+load "$WRF_MIDAS_DATA/utilities.ncl"
 
 load "./taylor_diagram.ncl" ; for Taylor diagrams
-load "$HOME/ncl/io_utils.ncl" ; reading station data & descr 
 load "./auto_presets.ncl"     ; List of wrf-file-lists
 ;-----------------------------------------------------------;
 begin;PRESETS;  
@@ -43,19 +43,6 @@ begin;PRESETS;
   ; or maybe from the wrfout files directly, this would reduce 
   ; number of places were changes must be made between runs...
 
-  ; Fields to be compared:
-  ; Current midas table (defined by get_midas_stations.pl)
-  ; C   VAR           C   VAR           C   VAR
-  ;  1  year          11  cld_base_hgt  21  maxT
-  ;  2  month         12  low_cld_type  22  minT
-  ;  3  day           13  med_cld_type  23  sub_obs_hr_cnt
-  ;  4  hour          14  hi_cld_type   24  sun_dur
-  ;  5  src_id        15  vis           25  prcp_24hr_amt
-  ;  6  wdir          16  air_T         26  max_gust
-  ;  7  wspd          17  Td
-  ;  8  weather_code  18  msl_pres
-  ;  9  ttl_cld       19  prcp_hr_cnt
-  ; 10  cld_base_amt  20  prcp_amt
 
   ; "u10dir" and "u10spd" are not in wrfout, in order to get
   ; these, we use get_wrf_u10dir and get_wrf_u10spd instead
@@ -71,8 +58,7 @@ begin;PRESETS;
   PADDING = 10
 
   ; PATH settings:
-  PATH_MIDAS  = "$HOME/data/obs/midas/"
-  FNAME_MIDAS = PATH_MIDAS+"station_list.dat"
+  FNAME_MIDAS = "$MIDAS_DATA_DIR/station_list.dat"
 
   ; Misc settings:
   YEAR = START_DATE(0)
@@ -163,26 +149,6 @@ begin
   return answer
 end
 
-; Function to read a list of MIDAS stations and returns:
-; id, id@lat, id@lon
-; The function takes no attributes but expects the variable
-; MIDAS_ROOT to be defined
-undef("read_station_list")
-function read_station_list()
-local fname,header,stations,table
-begin
-  fname = MIDAS_ROOT + "/station_list.dat"
-  table = asciiread(fname,-1,"string")  ; Read entire file to memory
-  stations = stringtoint(str_get_field(table(1::), 1, " ")); station id
-  stations@lat  = stringtofloat(str_get_field(table(1::),7," "));latitude
-  stations@lon  = stringtofloat(str_get_field(table(1::),8," "));longitude
-
-  ;header  = headerreadAsciiHead(infile, 1) ; header (first row)
-  ;stations = readAsciiTable(infile,1,"int",1) ; station ID
-  ;stations@lat = readAsciiTable(infile,
-
-  return stations
-end
 
 ; Function to read midas observation data
 ; The files should be created get_midas_stations.pl
@@ -241,7 +207,8 @@ begin
 
   do i=0,nstations-1              ; for each station
     print("Processing station: "+tostring(stations(i)))
-    fname = "midas_"+stations(i)+"_"+START_DATE(0)+".dat"
+    fname = "$MIDAS_DATA_DIR/"+stations(i)+".txt"
+    data = read_midas_data
     table = asciiread(fpath+fname,-1,"string")  ; Read station file
 
     if(all(ismissing(table))) then
@@ -610,7 +577,7 @@ begin;MAIN;
   nlists = dimsizes(LISTS)
 
   ;TODO load midas data fields and station coordinates
-  midas_stns = read_station_list()    ; get available midas stations
+  midas_stns = read_station_list("$MIDAS_DATA_DIR/station_list.dat")    ; get available midas stations
   midas_data = read_station_data(midas_stns)
   ;printVarSummary(midas_data)
   ;print(midas_data(0,:,0:6))
