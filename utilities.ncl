@@ -6,8 +6,8 @@
 ; Written by:                                               ;
 ;   Adam Dingwell, Uppsala University, 2014                 ;
 ;-----------------------------------------------------------;
-undef("read_midas_data2")
-function read_midas_data2(fname)
+undef("read_midas_data")
+function read_midas_data(fname)
 local data
 begin
     ; Columns in file:
