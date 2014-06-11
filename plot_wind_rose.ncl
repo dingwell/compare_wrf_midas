@@ -19,8 +19,8 @@ begin
   data  = read_midas_data(fname)
   station = tostring(data@stn_id)
   
-  wdir  = data(1,0:)
-  wspd  = data(2,0:)*0.51444444444 ;knots to m/s
+  wdir  = data@WDir
+  wspd  = data@WSpd*0.51444444444 ;knots to m/s
                                   
   wspd@long_name = "Wind Speed"
   wspd@units     = "m/s"
