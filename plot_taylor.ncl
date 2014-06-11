@@ -48,7 +48,8 @@ begin;PRESETS;
   ; these, we use get_wrf_u10dir and get_wrf_u10spd instead
   ; (included in this script
   VAR_WRF = (/"u10dir","u10spd","T2","td2","slp","PRECIP_H"/)
-  VAR_MIDAS = (/6,7,16,17,18,20/)
+  ;VAR_MIDAS = (/6,7,16,17,18,20/)
+  VAR_MIDAS = (/"WDir","WSpd","TAir","TDew","Pmsl","precip_hr_cnt"/)
 
   ; Observation times in MIDAS data:
   ; TIMES = (/ "00", "03", "06", "09", "12", "15", "18", "21" /)
@@ -151,11 +152,8 @@ end
 
 
 ; Function to read midas observation data
-; The files should be created get_midas_stations.pl
-; and stored as midas_[stnid]_[yyyy].dat
-; in the MIDAS_ROOT/[yyyy] directory
 ; Depends on the following global variables:
-;   MIDAS_ROOT, VAR_MIDAS
+;   VAR_MIDAS
 undef("read_station_data")
 function read_station_data(stations)
 local data,dims,fname,fpath,table,        \
@@ -167,9 +165,7 @@ begin
     print("ERROR: year of START_DATE and END_DATE must equal!")
   end if
 
-  fpath = MIDAS_ROOT+"/"+START_DATE(0)+"/"  ; path to MIDAS data
-  ;fname = "midas_"+stations(0)+"_"+START_DATE(0)+".dat" ; First file
-  ;table = asciiread(fpath+fname,-1,"string")  ; Data for first station
+  fpath = "$MIDAS_DATA_DIR"
 
   nstations = dimsizes(stations)  ; number of stations
   nvar      = dimsizes(VAR_MIDAS) ; number of variables
@@ -208,38 +204,27 @@ begin
   do i=0,nstations-1              ; for each station
     print("Processing station: "+tostring(stations(i)))
     fname = "$MIDAS_DATA_DIR/"+stations(i)+".txt"
-    data = read_midas_data
-    table = asciiread(fpath+fname,-1,"string")  ; Read station file
+    midas = read_midas_data(fname)
+    ;table = asciiread(fpath+fname,-1,"string")  ; Read station file
 
-    if(all(ismissing(table))) then
-      print("Warning: no data found in file: "+fname)
-    end if
-
-    if( sum(dimsizes(table)) .eq. 1 ) then        ; If file is empty
-      delete(table) ; Delete files data (1 fillValue) and
+    if( sum(dimsizes(midas)) .eq. 1 ) then        ; If file is empty
+      delete(midas) ; Delete files data (1 fillValue) and
       continue      ; move to next iteration, leaving current station
     end if          ; undefined (i.e. as fillValues)
-      
 
-    ; Get station information:
-    year  = stringtoint(str_get_field(table(0::), 1, ","))
-    month = stringtoint(str_get_field(table(0::), 2, ","))
-    day   = stringtoint(str_get_field(table(0::), 3, ","))
-
-    doy_all = day_of_year(year,month,day)
+    doy_all = day_of_year(midas@year,midas@month,midas@day) + midas@hour/24.
     iobs = ind( doy_all .ge. data&DayOfYear(0) .and.  \
                 doy_all .lt. data&DayOfYear(ntimes-1) ) ; find relevant obs
 
     ; We can now use iobs to extract the relevant rows from table
-    hour  = stringtoint(str_get_field(table(iobs), 4, ","))
     doy   = doy_all(iobs)+hour/24.
 
     do j=0,nvar-1                 ; load each variable to data
       print("Trying to read variable no. "+tostring(j)+\
-            " (column: "+tostring(VAR_MIDAS(j))+")"   +\
+            " (column: "+VAR_MIDAS(j)+")"   +\
             " (WRF-var: "+VAR_WRF(j)+")" )
       ; We will only insert values for points with data, the others are left as _FillValue
-      data(i,j,{doy}) = stringtofloat(str_get_field(table(iobs),VAR_MIDAS(j), ","))
+      data(i,j,{doy}) = midas@$VAR_MIDAS(j)$
 
       ; Convert to WRF units:
       if(VAR_WRF(j).eq."T2") then    ; 2m temperature should be in K
@@ -257,7 +242,7 @@ begin
       ;print(VAR_MIDAS(j))
       ;print("Done reading variable")
     end do  ;variables
-    delete([/table,year,month,day,doy,doy_all,hour,iobs/])
+    delete([/midas,year,month,day,doy,doy_all,hour,iobs/])
   end do  ;stations
 
   return data
@@ -302,42 +287,6 @@ begin
   interp_var@lat = lat
 
   return interp_var
-end
-
-undef("get_wrf_u10dir")
-function get_wrf_u10dir(f_wrf)
-local u10,v10,r2d,dir,i
-begin
-  ; load 10m u,v-components on massgrid, rotated to Earth coordinate
-  u10 = wrf_user_getvar(f_wrf,"U10",-1)
-  v10 = wrf_user_getvar(f_wrf,"V10",-1)
-  r2d = 45.0/atan(1.0)  ; conversion factor (radians to degrees)
-
-  ; We use atan2 instead of atan since plain atan is not able
-  ; to determine direction completely (sometimes 180 degrees off)
-  dir = atan2(u10,v10)*r2d+180  ; horiz. wind dir
-
-  ; Set dimension names
-  dir!0 = u10!0
-  dir!1 = u10!1
-  dir!2 = u10!2
-  return dir
-end
-
-undef("get_wrf_u10spd")
-function get_wrf_u10spd(f_wrf)
-local uvmet10,spd
-begin
-  ; load 10m u,v-components on massgrid, rotated to Earth coordinate
-  u10 = wrf_user_getvar(f_wrf,"U10",-1)
-  v10 = wrf_user_getvar(f_wrf,"V10",-1)
-  spd = sqrt( u10^2 + v10^2 ) ; horiz. wind spd
-
-  ; Set dimension names
-  spd!0 = u10!0
-  spd!1 = u10!1
-  spd!2 = u10!2
-  return spd
 end
 
 ; Function to set color indices for stations
