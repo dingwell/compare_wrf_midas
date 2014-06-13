@@ -12,7 +12,7 @@ load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
 ;load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/wrf/WRFUserARW.ncl"
-load "$WRF_MIDAS_DATA/utilities.ncl"
+load "$WRF_MIDAS_ROOT/utilities.ncl"
 
 load "./taylor_diagram.ncl" ; for Taylor diagrams
 load "./auto_presets.ncl"     ; List of wrf-file-lists
@@ -22,27 +22,6 @@ begin;PRESETS;
   ; identification they are given names in all caps
   ; (Actually, all variables in NCL are global unless
   ;  stated otherwise)
-
-  ; Set Date & Time:
-  ; START_DATE  = (/ 2010, 04, 14 /) ;  (year,month,day)
-  ; END_DATE    = (/ 2010, 04, 19 /) ;  (year,month,day)
-  ; 
-  ; These commented out settings have been moved to 
-  ; compare_wrf_midas.sh which in turn puts them
-  ; in file_list_wrf.ncl (change name on this one!)
-  ; the NCL script is load by this script
-  ;
-  ; TODO: 
-  ; Put all presets in compare_wrf_midas.sh
-  ; and print "global" variables to 
-  ; file_list_wrf.ncl
-
-  ; midas data load functions only support one year
-  ; (start & end date must equal)
-  ; could be set to read dates from file_list_wrf.ncl
-  ; or maybe from the wrfout files directly, this would reduce 
-  ; number of places were changes must be made between runs...
-
 
   ; "u10dir" and "u10spd" are not in wrfout, in order to get
   ; these, we use get_wrf_u10dir and get_wrf_u10spd instead
@@ -419,8 +398,15 @@ begin
   lres@txJust           = "TopLeft"
   labels  = new(npoints,graphic)
 
+  ; The default settings are messed up, we need to set cen_lon and cen_lat manually:
+  mres@mpCenterLatF=f_wrf[0]@CEN_LAT
+  mres@mpCenterLonF=f_wrf[0]@CEN_LON
   ; Create map
+  print("------------")
   map = wrf_map(wks,f_wrf[0],mres)
+  ;draw(map)
+  ;frame(wks)
+  ;exit
 
   ; Overlay map with points (station positions)
   do i=0,npoints-1
@@ -523,140 +509,138 @@ begin;MAIN;
     print("Error: length of VAR_MIDAS and VAR_WRF must equal")
   end if
 
-  nlists = dimsizes(LISTS)
-
   ;TODO load midas data fields and station coordinates
+  
   midas_stns = read_station_list("$MIDAS_DATA_DIR/station_list.dat")    ; get available midas stations
-  midas_data = read_station_data(midas_stns)
   ;printVarSummary(midas_data)
   ;print(midas_data(0,:,0:6))
 
-  do i=0,nlists-1   ; For each set of WRF-data
-    ; Set up files
-    wrf_list = asciiread( LISTS(i),-1,"string") ; load first file-list to EOF
-    ;print(wrf_list)
-    f_wrf = addfiles( wrf_list,"r" )            ; open the wrf files
-    print("Processing "+LISTS(i)+":")
+  ; Set up files
+  wrf_list = asciiread("file_list_wrf.txt",-1,"string") ; load first file-list to EOF
+  ;print(wrf_list)
+  f_wrf = addfiles( wrf_list,"r" )            ; open the wrf files for reading
 
-    ; Check which stations are within the domain:
-    midas_stns@indomain = indomain(f_wrf,midas_stns@lon,midas_stns@lat)
+  ; Check which stations are within the domain:
+  midas_stns@indomain = indomain(f_wrf,midas_stns@lon,midas_stns@lat)
+  istns = ind(midas_stns@indomain)
+  midas_data = read_station_data(midas_stns(istns))
+  lon = midas_stns@lon(istns)  ; lon for stns in domains
+  lat = midas_stns@lat(istns)  ; lat for stns in domains
 
-    ; We now want to create lat and lon arrays which only contain the
-    ; coordinates of stations within the WRF domain, these points 
-    ; will be used for interpolating the WRF data
-    npoints = num(midas_stns@indomain)  ; number of stations in domain
-    lon = new( npoints, float)          ; create new lat,lon arrays
-    lat = new( npoints, float)          ;
-    ntimes  = dimsizes(midas_data(0,0,:))   ; get length of time dimension
-    obs = new( (/npoints, ntimes/), float ) ; create obs array, used in
-                                            ; nvars loop (see below)
+  ; We now want to create lat and lon arrays which only contain the
+  ; coordinates of stations within the WRF domain, these points 
+  ; will be used for interpolating the WRF data
+  npoints = num(midas_stns@indomain)  ; number of stations in domain
+  ;lon = new( npoints, float)          ; create new lat,lon arrays
+  ;lat = new( npoints, float)          ;
+  ntimes  = dimsizes(midas_data(0,0,:))   ; get length of time dimension
+  obs = new( (/npoints, ntimes/), float ) ; create obs array, used in
+                                          ; nvars loop (see below)
 
-    ; This method is unecessary, see replacement
-    ;il = 0    ; lat,lon counter (result)
-    ;is = 0    ; station counter (input)
-    ;do while(il.lt.npoints) ; get lat,lon for all stations in domain
-      ;if(midas_stns@indomain(is)) then  ; station in domain?
-        ;lon(il) = midas_stns@lon(is)    ; use longitude
-        ;lat(il) = midas_stns@lat(is)    ; use latitude
-        ;il=il+1                         ; prepare for next lat,lon
-      ;end if
-      ;is=is+1                           ; next station
-    ;end do
-    ; replacement method, no loop
-    istns = ind(midas_stns@indomain)
-    lon = midas_stns@lon(istns)  ; lon for stns in domains
-    lat = midas_stns@lat(istns)  ; lat for stns in domains
+  ; This method is unecessary, see replacement
+  ;il = 0    ; lat,lon counter (result)
+  ;is = 0    ; station counter (input)
+  ;do while(il.lt.npoints) ; get lat,lon for all stations in domain
+    ;if(midas_stns@indomain(is)) then  ; station in domain?
+      ;lon(il) = midas_stns@lon(is)    ; use longitude
+      ;lat(il) = midas_stns@lat(is)    ; use latitude
+      ;il=il+1                         ; prepare for next lat,lon
+    ;end if
+    ;is=is+1                           ; next station
+  ;end do
+  ; replacement method, no loop
 
-    ; Get lat,lon this is the same for all variables
-    ; (unless we read from the staggered grids, and  why would we do
-    ; that?)
-    wrf_lon = wrf_user_getvar(f_wrf,"XLONG",1) ;
-    wrf_lat = wrf_user_getvar(f_wrf,"XLAT",1)  ;
+  ; Get lat,lon this is the same for all variables
+  ; (unless we read from the staggered grids, and  why would we do
+  ; that?)
+  wrf_lon = wrf_user_getvar(f_wrf,"XLONG",1) ;
+  wrf_lat = wrf_user_getvar(f_wrf,"XLAT",1)  ;
 
-    ; Prepare workstation for plotting
-    wks = gsn_open_wks("pdf","test_"+NAMES_TEST(i))
-    gsn_define_colormap(wks,"BkBlAqGrYeOrReViWh200")
-    
-    ; First plot an overview of the current domain
-    ppos_in_domain(wks,f_wrf,midas_stns)
+  ; Prepare workstation for plotting
+  wks = gsn_open_wks("pdf","plot")
+  gsn_define_colormap(wks,"BkBlAqGrYeOrReViWh200")
+  
+  ; First plot an overview of the current domain
+  ppos_in_domain(wks,f_wrf,midas_stns)
 
-    do iv=0,nvars-1       ; For each variable
-      print("Variable "+VAR_WRF(iv)+":")
+  do iv=0,nvars-1       ; For each variable
+    print("Variable "+VAR_WRF(iv)+":")
 
-      ; Select midas data for current variable, and the relevant stations:
-      obs = midas_data(istns,iv,:) ; gives [stn,time]
+    ; Select midas data for current variable, and the relevant stations:
+    obs = midas_data(:,iv,:) ; gives [stn,time]
 
-      ; Read from files
-      print("Attempt to read WRF file")
-      if( VAR_WRF(iv).eq."u10dir" ) then      ; In some cases, e.g. wind direction
-        wrf_data = get_wrf_u10dir(f_wrf)      ; we need to preprocess the data before
-      else if( VAR_WRF(iv).eq."u10spd" ) then ; interpolating to stations
-        wrf_data = get_wrf_u10spd(f_wrf)      ; such as for udir and uspd (this list is incomplete)
-      else if( VAR_WRF(iv).eq."PRECIP_H" )  ; This is a custom diagnostic field
-        ;print(dimsizes(wrf_user_getvar(f_wrf,VAR_WRF(iv),-1)))
-        ;print(dimsizes(wrf_data))
-        ;wrf_data = wrf_user_getvar(f_wrf,VAR_WRF(iv),-1)*10 ; Hourly precip [1/10 mm]
-        wrf_data = wrf_user_getvar(f_wrf,VAR_WRF(iv),-1)
-        obs = obs/10.0 ; Hourly precip [mm]
-      else                                ; Other variables can be read directly
-        wrf_data = wrf_user_getvar(f_wrf,VAR_WRF(iv),-1) ; load wrf field (all times)
-      end if
-      end if 
-      end if
-      print("Mean value: "+tostring(avg(wrf_data)))
-      print("done")
-      ; Interpolate wrf data to stations
-      wrf_data@lon=wrf_lon  ; Store latitude and longitude as attributes
-      wrf_data@lat=wrf_lat  ; (required for get_wrf_var_in_ll)
-      ; Interpolate wrf_data to station locations and transpose to [stn,time]
-      print("Interpolating WRF data")
-      wrf_int = transpose(get_wrf_var_in_ll(wrf_data,VAR_WRF(iv),lat,lon))
-      print("done")
-      if( dimsizes(wrf_int(0,:)).ne.dimsizes(obs(0,:)) ) then
-        print("Error: record length of WRF data and/or MIDAS data")
-        print("       do not match time period in compare_wrf.sh")
-      end if
+    ; Read from files
+    print("Attempt to read WRF file")
+    if( VAR_WRF(iv).eq."u10dir" ) then      ; In some cases, e.g. wind direction
+      wrf_data = get_wrf_u10dir(f_wrf,TIMES)      ; we need to preprocess the data before
+    else if( VAR_WRF(iv).eq."u10spd" ) then ; interpolating to stations
+      wrf_data = get_wrf_u10spd(f_wrf,TIMES)      ; such as for udir and uspd (this list is incomplete)
+    else if( VAR_WRF(iv).eq."PRECIP_H" )  ; This is a custom diagnostic field
+      ;print(dimsizes(wrf_user_getvar(f_wrf,VAR_WRF(iv),-1)))
+      ;print(dimsizes(wrf_data))
+      ;wrf_data = wrf_user_getvar(f_wrf,VAR_WRF(iv),-1)*10 ; Hourly precip [1/10 mm]
+      wrf_data = wrf_user_getvar(f_wrf,VAR_WRF(iv),TIMES)
+      obs = obs/10.0 ; Hourly precip [mm]
+    else                                ; Other variables can be read directly
+      wrf_data = wrf_user_getvar(f_wrf,VAR_WRF(iv),-1) ; load wrf field (all times)
+    end if
+    end if 
+    end if
+    print("Mean value: "+tostring(avg(wrf_data)))
+    print("done")
+    ; Interpolate wrf data to stations
+    wrf_data@lon=wrf_lon  ; Store latitude and longitude as attributes
+    wrf_data@lat=wrf_lat  ; (required for get_wrf_var_in_ll)
+    ; Interpolate wrf_data to station locations and transpose to [stn,time]
+    print("Interpolating WRF data")
+    wrf_int = transpose(get_wrf_var_in_ll(wrf_data,VAR_WRF(iv),lat,lon))
+    print("done")
+    if( dimsizes(wrf_int(0,:)).ne.dimsizes(obs(0,:)) ) then
+      print("Error: record length of WRF data and/or MIDAS data")
+      print("       do not match time period in compare_wrf.sh")
+      print("Record length of WRF:   "+dimsizes(wrf_int(0,:)))
+      print("Record length of MIDAS: "+dimsizes(obs(0,:)))
+      print(obs&DayOfYear)
+      print("Please make sure WRF-data is in daily files from 00:00 to 23:00")
+    end if
 
-      ; Extra processing before plotting
-      if( VAR_WRF(iv).eq."u10dir" ) then      ; In some cases, e.g. wind direction
-        ; Check for wind speeds around 0 degrees (need to fix these for some plots)
-        do is=0,dimsizes(istns)-1
-          ddir = obs(is,:)-wrf_int(is,:)
-          print("1")
-          print("-------")
-          print(dimsizes(ddir))
-          print(dimsizes(obs(is,:)))
-          print(max(ddir))
-          print(min(ddir))
-          obs(is,:) = where(ddir.gt.180,obs(is,:)-360,obs(is,:))
-          obs(is,:) = where(ddir.lt.-180,obs(is,:)+360,obs(is,:))
-          ddir = obs(is,:)-wrf_int(is,:)
-          print(max(ddir))
-          print(min(ddir))
-        end do
-      end if
+    ; Extra processing before plotting
+    if( VAR_WRF(iv).eq."u10dir" ) then      ; In some cases, e.g. wind direction
+      ; Check for wind speeds around 0 degrees (need to fix these for some plots)
+      do is=0,dimsizes(istns)-1
+        ddir = obs(is,:)-wrf_int(is,:)
+        print("1")
+        print("-------")
+        print(dimsizes(ddir))
+        print(dimsizes(obs(is,:)))
+        print(max(ddir))
+        print(min(ddir))
+        obs(is,:) = where(ddir.gt.180,obs(is,:)-360,obs(is,:))
+        obs(is,:) = where(ddir.lt.-180,obs(is,:)+360,obs(is,:))
+        ddir = obs(is,:)-wrf_int(is,:)
+        print(max(ddir))
+        print(min(ddir))
+      end do
+    end if
 
-      ; Send midas and wrf data to ptaylor for analysis
-      print("Calling ptaylor")
-      ptaylor(wks,wrf_int,obs,VAR_WRF(iv),midas_stns(istns))
-      print("done")
-      ; Plot time series:
-  ;print(VAR_WRF(iv))
-      print("Calling ptime_series")
-      ptime_series(wks,wrf_int,obs,VAR_WRF(iv))
-      print("done")
-      ; Plot Scatter:
-      print("Calling pscatter")
-      pscatter(wks,wrf_int,obs,VAR_WRF(iv))
-      print("done")
-    end do  ; nvars
+    ; Send midas and wrf data to ptaylor for analysis
+    print("Calling ptaylor")
+    ptaylor(wks,wrf_int,obs,VAR_WRF(iv),midas_stns(istns))
+    print("done")
+    ; Plot time series:
+;print(VAR_WRF(iv))
+    print("Calling ptime_series")
+    ptime_series(wks,wrf_int,obs,VAR_WRF(iv))
+    print("done")
+    ; Plot Scatter:
+    print("Calling pscatter")
+    pscatter(wks,wrf_int,obs,VAR_WRF(iv))
+    print("done")
+  end do  ; nvars
 
 
-    delete(wks)
-    delete([/wrf_data,wrf_lat,wrf_lon/])
-    
-    ;i=i+1
-  end do ; nlists
+  delete(wks)
+  delete([/wrf_data,wrf_lat,wrf_lon/])
   
   print("Finished reading files")
 

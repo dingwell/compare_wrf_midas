@@ -103,12 +103,12 @@ end
 ;   Adam Dingwell, Uppsala University, 2012                 ;
 ;-----------------------------------------------------------;
 undef("get_wrf_u10dir")
-function get_wrf_u10dir(f_wrf)
+function get_wrf_u10dir(f_wrf,it)
 local u10,v10,r2d,dir,i
 begin
   ; load 10m u,v-components on massgrid, rotated to Earth coordinate
-  u10 = wrf_user_getvar(f_wrf,"U10",-1)
-  v10 = wrf_user_getvar(f_wrf,"V10",-1)
+  u10 = wrf_user_getvar(f_wrf,"U10",it)
+  v10 = wrf_user_getvar(f_wrf,"V10",it)
   r2d = 45.0/atan(1.0)  ; conversion factor (radians to degrees)
 
   ; We use atan2 instead of atan since plain atan is not able
@@ -134,12 +134,12 @@ end
 ;   Adam Dingwell, Uppsala University, 2012                 ;
 ;-----------------------------------------------------------;
 undef("get_wrf_u10spd")
-function get_wrf_u10spd(f_wrf)
+function get_wrf_u10spd(f_wrf,it)
 local uvmet10,spd
 begin
   ; load 10m u,v-components on massgrid, rotated to Earth coordinate
-  u10 = wrf_user_getvar(f_wrf,"U10",-1)
-  v10 = wrf_user_getvar(f_wrf,"V10",-1)
+  u10 = wrf_user_getvar(f_wrf,"U10",it)
+  v10 = wrf_user_getvar(f_wrf,"V10",it)
   spd = sqrt( u10^2 + v10^2 ) ; horiz. wind spd
 
   ; Set dimension names

@@ -45,7 +45,6 @@ ncl_startdate=$( echo $START | sed 's/-/, /g')  # Convert date 'y, m, d'
 ncl_line='START_DATE = (/ '$ncl_startdate' /)' # add line to $ncl_line
 ncl_enddate=$( echo $END   | sed 's/-/, /g')   # Convert date 'y, m, d'
 ncl_line=$ncl_line'\nEND_DATE   = (/ '$ncl_enddate' /)'   # add line to $ncl_line
-ncl_line=$ncl_line'\nMIDAS_ROOT = '$path_midas    # add line to $ncl_line
 # Change | to , and @(...) to (/.../) using sed:
 ncl_midas_times=$(echo $times_midas | sed 's/|/,/g' | sed 's;@(\(.*\));(/\1/);g')  
 ncl_line=$ncl_line'\nTIMES = '$ncl_midas_times
