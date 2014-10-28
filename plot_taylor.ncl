@@ -85,6 +85,9 @@ begin
   ; Get closest grid points for given lon x lat coordinate
   ij = wrf_user_ll_to_ij(f_wrf,lon,lat,True)
 
+  print(wrf@n_ll)
+  print(ij)
+
   ; Check if ij is within the domain (and padding limits):
   ; First, check if lon is scalar
   if( n.eq.1 ) then ; if scalar, ij is 1-D vector, only one point to test
@@ -102,7 +105,8 @@ begin
 
   else              ; otherwise, ij is 2-D, multiple points must be tested
     do while(i.lt.n)
-      ; Test if ij is withi the domain (uses global var PADDING for safety margin)
+      print(i)
+      ; Test if ij is within the domain (uses global var PADDING for safety margin)
       if( ij(1,i) .ge. PADDING-1 .and. \
           ij(0,i) .ge. PADDING-1 ) then             ; Lower boundary?
         if( ij(1,i) .le. wrf@ni-PADDING-1 .and. \
@@ -111,11 +115,13 @@ begin
           i=i+1
           continue
         else                  ; Outside lower boundary?
+          print("low")
           answer(i) = False
           i=i+1
           continue
         end if
       else                    ; Outside upper boundary?
+        print("high")
         answer(i) = False
         i=i+1
         continue
@@ -239,47 +245,6 @@ begin
   end do  ;stations
 
   return data
-end
-
-; Function extract WRF data at specific (lat,lon) points
-; the requires a (list of) wrf files, a variable name,
-; and one or several pairs of latitude, longitude coordinates
-; NOTE: the loaded variable should be on (t,x,y) format!
-undef("get_wrf_var_in_ll")
-function get_wrf_var_in_ll(var,vname,lat,lon)
-local var, interp_var, dims, ntimes, npoints, i, latlon_var
-begin
-  ;var = wrf_user_getvar(f_wrf,vname,-1) ; load wrf field (all times)
-
-  dims = dimsizes(var)                  ; check dimensions
-  if( dimsizes(dims).ne.3 ) then
-    print("WARNING: variable is not a 3D var (t,x,y), coordinates names will be wrong!")
-  end if
-
-  ;var@lat = wrf_user_getvar(f_wrf,"XLAT",1)  ; get grid coordinates
-  ;var@lon = wrf_user_getvar(f_wrf,"XLONG",1) ; get grid coordinates
-
-  ntimes  = dims(0)
-  npoints = dimsizes(lat)
-  interp_var = new( (/ntimes,npoints/) ,float)  ; predefine output variable
-  ; Interpolate 2D-field to given lon-lat coordinates:
-  ;   0,1 - inverse distance weight interpolation
-  ;   2   - bilinear interpolation
-  i=0
-  do while i.lt.dims(0) ; loop over times (hopefully this is time)
-    interp_var(i,:) = rcm2points(var@lat,var@lon,var(i,:,:),lat,lon,0)
-    ;interp_var = rcm2points(var@lat,var@lon,var,lat,lon,2)
-    i=i+1
-  end do
-
-  ; Define coordinate system:
-  ; THIS METHOD IS UNSTABLE, INPUT MUST BE ON (T,X,Y) FORMAT
-  interp_var!0 = "DayOfYear"
-  interp_var!1 = "Stations"
-  interp_var@lon = lon
-  interp_var@lat = lat
-
-  return interp_var
 end
 
 ; Function to set color indices for stations
@@ -538,6 +503,7 @@ begin;MAIN;
 
   ; Check which stations are within the domain:
   midas_stns@indomain = indomain(f_wrf,midas_stns@lon,midas_stns@lat)
+  print(midas_stns@indomain)
   istns = ind(midas_stns@indomain)
   midas_data = read_station_data(midas_stns(istns))
   lon = midas_stns@lon(istns)  ; lon for stns in domains
@@ -552,20 +518,6 @@ begin;MAIN;
   ntimes  = dimsizes(midas_data(0,0,:))   ; get length of time dimension
   obs = new( (/npoints, ntimes/), float ) ; create obs array, used in
                                           ; nvars loop (see below)
-
-  ; This method is unecessary, see replacement
-  ;il = 0    ; lat,lon counter (result)
-  ;is = 0    ; station counter (input)
-  ;do while(il.lt.npoints) ; get lat,lon for all stations in domain
-    ;if(midas_stns@indomain(is)) then  ; station in domain?
-      ;lon(il) = midas_stns@lon(is)    ; use longitude
-      ;lat(il) = midas_stns@lat(is)    ; use latitude
-      ;il=il+1                         ; prepare for next lat,lon
-    ;end if
-    ;is=is+1                           ; next station
-  ;end do
-  ; replacement method, no loop
-
   ; Get lat,lon this is the same for all variables
   ; (unless we read from the staggered grids, and  why would we do
   ; that?)
@@ -581,50 +533,49 @@ begin;MAIN;
 
   ; Get all times for WRF data
   ntime_per_file=dimsizes(TIMES)
-  WRF_TIMES=new((/nfiles*ntime_per_file/),integer)  ; Create empty array 
-  ;WRF_TIMES=new((/ntimes/),float)  ; Create empty array 
-  do id=0,nfiles-1
-    istart=ntime_per_file*id
-    iend=ntime_per_file*(id+1)-1
-    ; fill array with values for each day:
-    WRF_TIMES(istart:iend) = TIMES+24*id
-    ; The indices above will select a singel day
-    ; Each value in WRF_TIMES will be relative the firest output time (index 0)
-  end do
   do iv=0,nvars-1       ; For each variable
     print("Variable "+VAR_WRF(iv)+":")
 
     ; Select midas data for current variable, and the relevant stations:
     obs = midas_data(:,iv,:) ; gives [stn,time]
 
-    ; Read from files
-    print("Attempt to read WRF file")
-    if( VAR_WRF(iv).eq."u10dir" ) then      ; In some cases, e.g. wind direction
-      wrf_data = get_wrf_u10dir(f_wrf,WRF_TIMES)      ; we need to preprocess the data before
-    else if( VAR_WRF(iv).eq."u10spd" ) then ; interpolating to stations
-      wrf_data = get_wrf_u10spd(f_wrf,WRF_TIMES)      ; such as for udir and uspd (this list is incomplete)
-    else if( VAR_WRF(iv).eq."PRECIP_H" )  ; This is a custom diagnostic field
-      print("Please skip this field for now")
-      exit
-      ;print(dimsizes(wrf_user_getvar(f_wrf,VAR_WRF(iv),-1)))
-      ;print(dimsizes(wrf_data))
-      ;wrf_data = wrf_user_getvar(f_wrf,VAR_WRF(iv),-1)*10 ; Hourly precip [1/10 mm]
-      wrf_data = wrf_user_getvar(f_wrf,VAR_WRF(iv),WRF_TIMES)
-      obs = obs/10.0 ; Hourly precip [mm]
-    else                                ; Other variables can be read directly
-      wrf_data = wrf_user_getvar(f_wrf,VAR_WRF(iv),WRF_TIMES) ; load wrf field (all times)
-    end if
-    end if 
-    end if
-    printVarSummary(wrf_data)
-    print("Mean value: "+tostring(avg(wrf_data)))
-    print("done")
-    ; Interpolate wrf data to stations
-    wrf_data@lon=wrf_lon  ; Store latitude and longitude as attributes
-    wrf_data@lat=wrf_lat  ; (required for get_wrf_var_in_ll)
-    ; Interpolate wrf_data to station locations and transpose to [stn,time]
-    print("Interpolating WRF data")
-    wrf_int = transpose(get_wrf_var_in_ll(wrf_data,VAR_WRF(iv),lat,lon))
+    ; Read from WRF files in smaller hyperslabs (1 per file)
+    ; Prepare output variable:
+    wrf_int = new( (/npoints,ntimes/),float)
+    ; Loop over files (1 file per 24 hours!)
+    do id=0,nfiles-1
+      WRF_TIMES=TIMES+ntime_per_file*id   ; Which time indexed (relative first value) to read
+      istart=ntime_per_file*id            ; indices for wrf_int
+      iend=ntime_per_file*(id+1)-1        ;
+
+      print("Attempt to read WRF file: "+id)
+      if( VAR_WRF(iv).eq."u10dir" ) then                ; In some cases, e.g. wind direction
+        wrf_data = get_wrf_u10dir(f_wrf,WRF_TIMES)      ; we need to preprocess the data before
+      else if( VAR_WRF(iv).eq."u10spd" ) then           ; interpolating to stations
+        wrf_data = get_wrf_u10spd(f_wrf,WRF_TIMES)      ; such as for udir and uspd (this list is incomplete)
+      else if( VAR_WRF(iv).eq."PRECIP_H" )              ; This is a custom diagnostic field, which I don't usually use
+        print("Please skip this field for now")
+        exit
+        wrf_data = wrf_user_getvar(f_wrf,VAR_WRF(iv),WRF_TIMES)
+        obs = obs/10.0 ; Hourly precip [mm]
+      else                                ; Other variables can be read directly
+        wrf_data = wrf_user_getvar(f_wrf,VAR_WRF(iv),WRF_TIMES) ; load wrf field (all times)
+      end if  ; An annoying thing with NCL: no clean way to make if-blocks!
+      end if  ; Need to close each if, else-if and else individually!
+      end if
+      ;printVarSummary(wrf_data)
+      print("Mean value: "+tostring(avg(wrf_data)))
+      print("done")
+      ; Interpolate wrf data to stations
+      wrf_data@lon=wrf_lon  ; Store latitude and longitude as attributes
+      wrf_data@lat=wrf_lat  ; (required for get_wrf_var_in_ll)
+      ; Interpolate wrf_data to station locations and transpose to [stn,time]
+      print("Interpolating WRF data")
+      ;printVarSummary(wrf_int(:,istart:iend))
+      ;A=transpose(get_wrf_var_in_ll(wrf_data,VAR_WRF(iv),lat,lon))
+      ;printVarSummary(A)
+      wrf_int(:,istart:iend) = transpose(get_wrf_var_in_ll(wrf_data,VAR_WRF(iv),lat,lon))
+    end do
     print("done")
     if( dimsizes(wrf_int(0,:)).ne.dimsizes(obs(0,:)) ) then
       print("Error: record length of WRF data and/or MIDAS data")
@@ -640,17 +591,17 @@ begin;MAIN;
       ; Check for wind speeds around 0 degrees (need to fix these for some plots)
       do is=0,dimsizes(istns)-1
         ddir = obs(is,:)-wrf_int(is,:)
-        print("1")
-        print("-------")
-        print(dimsizes(ddir))
-        print(dimsizes(obs(is,:)))
-        print(max(ddir))
-        print(min(ddir))
+        ;print("1")
+        ;print("-------")
+        ;print(dimsizes(ddir))
+        ;print(dimsizes(obs(is,:)))
+        ;print(max(ddir))
+        ;print(min(ddir))
         obs(is,:) = where(ddir.gt.180,obs(is,:)-360,obs(is,:))
         obs(is,:) = where(ddir.lt.-180,obs(is,:)+360,obs(is,:))
         ddir = obs(is,:)-wrf_int(is,:)
-        print(max(ddir))
-        print(min(ddir))
+        ;print(max(ddir))
+        ;print(min(ddir))
       end do
     end if
 

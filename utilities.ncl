@@ -93,6 +93,57 @@ begin
 end
 ;-----------------------------------------------------------;
 ;                                                           ;
+; Interpolate WRF-data to give lon-lat coordinate           ;
+;                                                           ; 
+; Input should be a WRF variable on (t,x,y) format          ;
+; It is recommended to do this in smaller chunks if working ;
+; if working with large data sets as RAM can easily be a    ;
+; limiting factor when reading t,x,y fields                 ;
+;                                                           ;
+; Written by:                                               ;
+;   Adam Dingwell, Uppsala University, 2012                 ;
+;-----------------------------------------------------------;
+undef("get_wrf_var_in_ll")
+function get_wrf_var_in_ll(var,vname,lat,lon)
+local var, interp_var, dims, ntimes, npoints, i, latlon_var
+begin
+;var = wrf_user_getvar(f_wrf,vname,-1) ; load wrf field (all times)
+
+  dims = dimsizes(var)                  ; check dimensions
+  if( dimsizes(dims).ne.3 ) then
+    print("WARNING: variable is not a 3D var (t,x,y), coordinates names will be wrong!")
+  end if
+
+  ;var@lat = wrf_user_getvar(f_wrf,"XLAT",1)  ; get grid coordinates
+  ;var@lon = wrf_user_getvar(f_wrf,"XLONG",1) ; get grid coordinates
+
+  ntimes  = dims(0)
+  npoints = dimsizes(lat)
+  interp_var = new( (/ntimes,npoints/) ,float)  ; predefine output variable
+  ; Interpolate 2D-field to given lon-lat coordinates:
+  ;   0,1 - inverse distance weight interpolation
+  ;   2   - bilinear interpolation
+  i=0
+  do while i.lt.dims(0) ; loop over times (hopefully this is time)
+    interp_var(i,:) = rcm2points(var@lat,var@lon,var(i,:,:),lat,lon,0)
+    ;interp_var = rcm2points(var@lat,var@lon,var,lat,lon,2)
+    i=i+1
+  end do
+
+  ; Define coordinate system:
+  ; THIS METHOD IS UNSTABLE, INPUT MUST BE ON (T,X,Y) FORMAT
+  interp_var!0 = "DayOfYear"
+  interp_var!1 = "Stations"
+  interp_var@lon = lon
+  interp_var@lat = lat
+
+  return interp_var
+end
+
+
+
+;-----------------------------------------------------------;
+;                                                           ;
 ; Get Azimuthal 10m-wind direction from WRF file            ;
 ;                                                           ; 
 ; Function will use wrf_user_getvar to load rotated         ;
