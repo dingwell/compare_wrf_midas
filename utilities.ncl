@@ -52,8 +52,8 @@ begin
     data@TAir         = stringtofloat(str_get_field(table(0::),21, ","))
     data@TWet         = stringtofloat(str_get_field(table(0::),22, ","))
     data@TDew         = stringtofloat(str_get_field(table(0::),23, ","))
-    data@PStn         = stringtofloat(str_get_field(table(0::),24, ","))
-    data@PSfc         = stringtofloat(str_get_field(table(0::),25, ","))
+    data@Pstn         = stringtofloat(str_get_field(table(0::),24, ","))*100  ; in Pa
+    data@Psfc         = stringtofloat(str_get_field(table(0::),25, ","))*100  ; in Pa
     data@Psfc_hgt     = stringtofloat(str_get_field(table(0::),26, ","))
     data@Pmsl         = stringtofloat(str_get_field(table(0::),27, ","))
     data@Ptdcy        = stringtofloat(str_get_field(table(0::),28, ","))

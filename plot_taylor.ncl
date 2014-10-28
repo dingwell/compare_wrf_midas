@@ -26,9 +26,9 @@ begin;PRESETS;
   ; "u10dir" and "u10spd" are not in wrfout, in order to get
   ; these, we use get_wrf_u10dir and get_wrf_u10spd instead
   ; (included in this script
-  VAR_WRF = (/"u10dir","u10spd","T2","td2","slp","PRECIP_H"/)
+  VAR_WRF = (/"u10dir","u10spd","T2","td2","PSFC","slp","PRECIP_H"/)
   ;VAR_MIDAS = (/6,7,16,17,18,20/)
-  VAR_MIDAS = (/"WDir","WSpd","TAir","TDew","Pmsl","precip_hr_cnt"/)
+  VAR_MIDAS = (/"WDir","WSpd","TAir","TDew","Pstn","Pmsl","precip_hr_cnt"/)
 
   ; Observation times in MIDAS data:
   ; TIMES = (/ "00", "03", "06", "09", "12", "15", "18", "21" /)
@@ -85,9 +85,6 @@ begin
   ; Get closest grid points for given lon x lat coordinate
   ij = wrf_user_ll_to_ij(f_wrf,lon,lat,True)
 
-  print(wrf@n_ll)
-  print(ij)
-
   ; Check if ij is within the domain (and padding limits):
   ; First, check if lon is scalar
   if( n.eq.1 ) then ; if scalar, ij is 1-D vector, only one point to test
@@ -105,7 +102,6 @@ begin
 
   else              ; otherwise, ij is 2-D, multiple points must be tested
     do while(i.lt.n)
-      print(i)
       ; Test if ij is within the domain (uses global var PADDING for safety margin)
       if( ij(1,i) .ge. PADDING-1 .and. \
           ij(0,i) .ge. PADDING-1 ) then             ; Lower boundary?
@@ -115,13 +111,11 @@ begin
           i=i+1
           continue
         else                  ; Outside lower boundary?
-          print("low")
           answer(i) = False
           i=i+1
           continue
         end if
       else                    ; Outside upper boundary?
-        print("high")
         answer(i) = False
         i=i+1
         continue
@@ -337,9 +331,9 @@ begin
   ;res@caseLabels   = case
 
 
-  print(dimsizes(ratio))
-  print(dimsizes(ratio))
-  print(dimsizes(ratio))
+  ;print(dimsizes(ratio))
+  ;print(dimsizes(ratio))
+  ;print(dimsizes(ratio))
   plot = taylor_diagram(wks,ratio,cc,res)
   ; TODO
   ; set name of figure
@@ -417,6 +411,39 @@ begin
   res@xyDashPattern     = 15
   res@xyLineThicknessF  = 2.0
   res@xyLineColors      = colors
+  res@xyMarkLineMode    = "Lines"
+  res@xyMarkerColors    = colors
+  
+  ; We want 1 overlay plot not plot1+plot2+overlay so diable these:
+  res@gsnDraw      = False                        ; don't draw yet
+  res@gsnFrame     = False                        ; don't advance frame yet
+
+  x = ts0&DayOfYear
+  res@tiXAxisString     = "Day of Year"
+  
+
+  ; Model data:
+  plot1 = gsn_csm_xy(wks,x,ts,res)
+
+  ; Obs data:
+  res@xyDashPattern     = 0
+  res@xyMarkLineMode    = "MarkLines"
+  plot2 = gsn_csm_xy(wks,x,ts0,res)
+  overlay(plot1,plot2)
+  draw(plot1)
+end
+
+undef("ptime_series_diff")
+procedure ptime_series_diff(wks,ts,ts0,vname)
+local res,nstns,istns,colors,cmap,nc,x,y
+begin
+  colors=color_list(wks,ts)  ; Setup color indices
+
+  res                   = True
+  res@tiMainString      = "Deviation from observation "+vname
+  res@xyDashPattern     = 15
+  res@xyLineThicknessF  = 2.0
+  res@xyLineColors      = colors
   res@xyMarkLineMode    = "MarkLines"
   res@xyMarkerColors    = colors
   ;res@xyLineDashSegLenF = 
@@ -426,7 +453,6 @@ begin
 
   plot = gsn_csm_xy(wks,x,y,res)
 end
-
 undef("pscatter")
 procedure pscatter(wks,ts,ts0,vname)
 local res,nstns,istns,colors,cmap,nc,x,y, \
@@ -503,7 +529,7 @@ begin;MAIN;
 
   ; Check which stations are within the domain:
   midas_stns@indomain = indomain(f_wrf,midas_stns@lon,midas_stns@lat)
-  print(midas_stns@indomain)
+  ;print(midas_stns@indomain)
   istns = ind(midas_stns@indomain)
   midas_data = read_station_data(midas_stns(istns))
   lon = midas_stns@lon(istns)  ; lon for stns in domains
@@ -516,6 +542,7 @@ begin;MAIN;
   ;lon = new( npoints, float)          ; create new lat,lon arrays
   ;lat = new( npoints, float)          ;
   ntimes  = dimsizes(midas_data(0,0,:))   ; get length of time dimension
+  ;print(ntimes)
   obs = new( (/npoints, ntimes/), float ) ; create obs array, used in
                                           ; nvars loop (see below)
   ; Get lat,lon this is the same for all variables
@@ -574,6 +601,9 @@ begin;MAIN;
       ;printVarSummary(wrf_int(:,istart:iend))
       ;A=transpose(get_wrf_var_in_ll(wrf_data,VAR_WRF(iv),lat,lon))
       ;printVarSummary(A)
+      ;print(istart)
+      ;print(iend)
+      ;printVarSummary(wrf_int)
       wrf_int(:,istart:iend) = transpose(get_wrf_var_in_ll(wrf_data,VAR_WRF(iv),lat,lon))
     end do
     print("done")
@@ -610,8 +640,8 @@ begin;MAIN;
     ptaylor(wks,wrf_int,obs,VAR_WRF(iv),midas_stns(istns))
     print("done")
     ; Plot time series:
-    print("Calling ptime_series")
-    ptime_series(wks,wrf_int,obs,VAR_WRF(iv))
+    print("Calling ptime_series_diff")
+    ptime_series_diff(wks,wrf_int,obs,VAR_WRF(iv))
     print("done")
     ; Plot Scatter:
     print("Calling pscatter")
