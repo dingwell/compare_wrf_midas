@@ -136,7 +136,7 @@ end
 undef("read_station_data")
 function read_station_data(stations)
 local data,dims,fname,fpath,table,        \
-      year,month,day,doy,doy_all,hour,    \
+      doy,doy_all,    \
       nstations,ntimes,nvar,ndays,nhours, \
       i,j,iobs
 begin
@@ -183,31 +183,45 @@ begin
   do i=0,nstations-1              ; for each station
     print("Processing station: "+tostring(stations(i)))
     fname = "$MIDAS_DATA_DIR/"+stations(i)+".txt"
+    ;print("POINT1")
     midas = read_midas_data(fname)
     ;table = asciiread(fpath+fname,-1,"string")  ; Read station file
+    ;print("POINT2")
+    ;print(midas@WDir)
 
-    if( sum(dimsizes(midas)) .eq. 1 ) then        ; If file is empty
-      delete(midas) ; Delete files data (1 fillValue) and
-      continue      ; move to next iteration, leaving current station
-    end if          ; undefined (i.e. as fillValues)
+    ;if( sum(dimsizes(midas)) .eq. 1 ) then        ; If file is empty
+    ;  delete(midas) ; Delete files data (1 fillValue) and
+    ;  continue      ; move to next iteration, leaving current station
+    ;end if          ; undefined (i.e. as fillValues)
 
     doy_all = day_of_year(midas@year,midas@month,midas@day) + midas@hour/24.
     iobs = ind( doy_all .ge. data&DayOfYear(0) .and.  \
                 doy_all .lt. data&DayOfYear(ntimes-1) ) ; find relevant obs
+    if( sum(dimsizes(iobs)).eq.1) then
+      print("Problem finding valid indexes")
+      print(iobs)
+      delete(iobs)
+      continue
+    end if
 
     ; We can now use iobs to extract the relevant rows from table
-    doy   = doy_all(iobs)+hour/24.
+    print(midas)
+    ;doy   = doy_all(iobs)+hour/24.
+    doy=doy_all(iobs)
 
     do j=0,nvar-1                 ; load each variable to data
       print("Trying to read variable no. "+tostring(j)+\
             " (column: "+VAR_MIDAS(j)+")"   +\
             " (WRF-var: "+VAR_WRF(j)+")" )
       ; We will only insert values for points with data, the others are left as _FillValue
-      data(i,j,{doy}) = midas@$VAR_MIDAS(j)$
+      data(i,j,{doy}) = midas@$VAR_MIDAS(j)$(iobs)
 
       ; Convert to WRF units:
       if(VAR_WRF(j).eq."T2") then    ; 2m temperature should be in K
         data(i,j,{doy}) = data(i,j,{doy})+273.15
+      end if
+      if(VAR_WRF(j).eq."u10spd") then
+        data(i,j,{doy}) = data(i,j,{doy})*0.514444444
       end if
         
       ; Replace nan with _FillValue 
@@ -221,7 +235,7 @@ begin
       ;print(VAR_MIDAS(j))
       ;print("Done reading variable")
     end do  ;variables
-    delete([/midas,year,month,day,doy,doy_all,hour,iobs/])
+    delete([/midas,doy,doy_all,iobs/])
   end do  ;stations
 
   return data
@@ -517,6 +531,8 @@ begin;MAIN;
 
   ; Set up files
   wrf_list = asciiread("file_list_wrf.txt",-1,"string") ; load first file-list to EOF
+  nfiles = dimsizes(wrf_list)
+
   ;print(wrf_list)
   f_wrf = addfiles( wrf_list,"r" )            ; open the wrf files for reading
 
@@ -563,6 +579,18 @@ begin;MAIN;
   ; First plot an overview of the current domain
   ppos_in_domain(wks,f_wrf,midas_stns)
 
+  ; Get all times for WRF data
+  ntime_per_file=dimsizes(TIMES)
+  WRF_TIMES=new((/nfiles*ntime_per_file/),integer)  ; Create empty array 
+  ;WRF_TIMES=new((/ntimes/),float)  ; Create empty array 
+  do id=0,nfiles-1
+    istart=ntime_per_file*id
+    iend=ntime_per_file*(id+1)-1
+    ; fill array with values for each day:
+    WRF_TIMES(istart:iend) = TIMES+24*id
+    ; The indices above will select a singel day
+    ; Each value in WRF_TIMES will be relative the firest output time (index 0)
+  end do
   do iv=0,nvars-1       ; For each variable
     print("Variable "+VAR_WRF(iv)+":")
 
@@ -572,20 +600,23 @@ begin;MAIN;
     ; Read from files
     print("Attempt to read WRF file")
     if( VAR_WRF(iv).eq."u10dir" ) then      ; In some cases, e.g. wind direction
-      wrf_data = get_wrf_u10dir(f_wrf,TIMES)      ; we need to preprocess the data before
+      wrf_data = get_wrf_u10dir(f_wrf,WRF_TIMES)      ; we need to preprocess the data before
     else if( VAR_WRF(iv).eq."u10spd" ) then ; interpolating to stations
-      wrf_data = get_wrf_u10spd(f_wrf,TIMES)      ; such as for udir and uspd (this list is incomplete)
+      wrf_data = get_wrf_u10spd(f_wrf,WRF_TIMES)      ; such as for udir and uspd (this list is incomplete)
     else if( VAR_WRF(iv).eq."PRECIP_H" )  ; This is a custom diagnostic field
+      print("Please skip this field for now")
+      exit
       ;print(dimsizes(wrf_user_getvar(f_wrf,VAR_WRF(iv),-1)))
       ;print(dimsizes(wrf_data))
       ;wrf_data = wrf_user_getvar(f_wrf,VAR_WRF(iv),-1)*10 ; Hourly precip [1/10 mm]
-      wrf_data = wrf_user_getvar(f_wrf,VAR_WRF(iv),TIMES)
+      wrf_data = wrf_user_getvar(f_wrf,VAR_WRF(iv),WRF_TIMES)
       obs = obs/10.0 ; Hourly precip [mm]
     else                                ; Other variables can be read directly
-      wrf_data = wrf_user_getvar(f_wrf,VAR_WRF(iv),-1) ; load wrf field (all times)
+      wrf_data = wrf_user_getvar(f_wrf,VAR_WRF(iv),WRF_TIMES) ; load wrf field (all times)
     end if
     end if 
     end if
+    printVarSummary(wrf_data)
     print("Mean value: "+tostring(avg(wrf_data)))
     print("done")
     ; Interpolate wrf data to stations
@@ -628,7 +659,6 @@ begin;MAIN;
     ptaylor(wks,wrf_int,obs,VAR_WRF(iv),midas_stns(istns))
     print("done")
     ; Plot time series:
-;print(VAR_WRF(iv))
     print("Calling ptime_series")
     ptime_series(wks,wrf_int,obs,VAR_WRF(iv))
     print("done")
