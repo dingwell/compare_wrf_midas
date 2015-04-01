@@ -8,7 +8,7 @@
 ;-----------------------------------------------------------;
 undef("read_midas_data")
 function read_midas_data(fname)
-local data
+local table,data,Td,Tv,g,Zg,Rd,p
 begin
     ; Columns in file:
     ;  1- 6: id, id_type, date (yyyy-mm-dd HH:MM), type, src_id, region
@@ -52,16 +52,26 @@ begin
     data@TAir         = stringtofloat(str_get_field(table(0::),21, ","))
     data@TWet         = stringtofloat(str_get_field(table(0::),22, ","))
     data@TDew         = stringtofloat(str_get_field(table(0::),23, ","))
-    data@Pstn         = stringtofloat(str_get_field(table(0::),24, ","))*100  ; in Pa
-    data@Psfc         = stringtofloat(str_get_field(table(0::),25, ","))*100  ; in Pa
+    data@Pstn         = stringtofloat(str_get_field(table(0::),24, ","))*100  ; in Pa (WRF data is in Pa)
+    data@Psfc         = stringtofloat(str_get_field(table(0::),25, ","))*100  ; in Pa (don't use, seems wrong)
     data@Psfc_hgt     = stringtofloat(str_get_field(table(0::),26, ","))
-    data@Pmsl         = stringtofloat(str_get_field(table(0::),27, ","))
+    data@Pmsl         = stringtofloat(str_get_field(table(0::),27, ","))  ;WRF data is in hPa
     data@Ptdcy        = stringtofloat(str_get_field(table(0::),28, ","))
     data@precip_hr_cnt= stringtofloat(str_get_field(table(0::),29, ","))
     data@precip_amt   = stringtofloat(str_get_field(table(0::),30, ","))
     data@precip_amt   = stringtofloat(str_get_field(table(0::),30, ","))
     data@maxT         = stringtofloat(str_get_field(table(0::),40, ","))
     data@minT         = stringtofloat(str_get_field(table(0::),41, ","))
+
+    ; Calculate Virtual Temperature according to NOAA:
+    Td= data@TDew     ; Dewpoint temperature in C
+    p = data@Pstn     ; Pressure in Pa
+    Tv = (data@TAir+273.15)/(1-0.379*(6.11*10^(7.5*Td/(237.7+Td))/(p/100)))
+    ; Provide an option to use the calculated msl pressure:
+    g = 9.82          ; gravity acc. in m/s2
+    Zg=data@Psfc_hgt  ; Elevation in m
+    Rd=287            ; Specific gas constant dry air in 
+    data@Pmsl_calc    = p*exp(g*Zg/(Rd*Tv))/100 ; msl pressure in hPa
 
     return data
 end
