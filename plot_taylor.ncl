@@ -15,7 +15,9 @@ load "$NCARG_ROOT/lib/ncarg/nclscripts/wrf/WRFUserARW.ncl"
 load "$WRF_MIDAS_ROOT/utilities.ncl"
 
 load "./taylor_diagram.ncl" ; for Taylor diagrams
+
 load "./auto_presets.ncl"     ; List of wrf-file-lists
+
 ;-----------------------------------------------------------;
 begin;PRESETS;  
   ; The variables defined here are "global", for easy
@@ -28,7 +30,7 @@ begin;PRESETS;
   ; (included in this script
   VAR_WRF = (/"u10dir","u10spd","T2","td2","PSFC","slp","PRECIP_H"/)
   ;VAR_MIDAS = (/6,7,16,17,18,20/)
-  VAR_MIDAS = (/"WDir","WSpd","TAir","TDew","Pstn","Pmsl","precip_hr_cnt"/)
+  VAR_MIDAS = (/"WDir","WSpd","TAir","TDew","Pstn","Pmsl_calc","precip_hr_cnt"/)
 
   ; Observation times in MIDAS data:
   ; TIMES = (/ "00", "03", "06", "09", "12", "15", "18", "21" /)
@@ -402,35 +404,31 @@ end
 
 undef("ptime_series")
 procedure ptime_series(wks,ts,ts0,vname)
-local res,nstns,istns,colors,cmap,nc,x,y
+local res,nstns,istns,colors,cmap,nc,x,ndim
 begin
   colors=color_list(wks,ts)  ; Setup color indices
 
   res                   = True
-  res@tiMainString      = "Deviation from observation "+vname
+  res@tiMainString      = "Time series model and observation "+vname
   res@xyDashPattern     = 15
   res@xyLineThicknessF  = 2.0
   res@xyLineColors      = colors
-  res@xyMarkLineMode    = "Lines"
+  res@xyMarkLineMode    = "MarkLines"
   res@xyMarkerColors    = colors
-  
-  ; We want 1 overlay plot not plot1+plot2+overlay so diable these:
-  res@gsnDraw      = False                        ; don't draw yet
-  res@gsnFrame     = False                        ; don't advance frame yet
 
   x = ts0&DayOfYear
   res@tiXAxisString     = "Day of Year"
   
+  ndim=dimsizes(ts)
+  
+  data=new((/ndim(0)*2,ndim(1)/),float)
+  
+  data(0:ndim(0)-1,:)=ts
+  data(ndim(0):,:)=ts0
+  copy_VarAtts(ts,data)
 
   ; Model data:
-  plot1 = gsn_csm_xy(wks,x,ts,res)
-
-  ; Obs data:
-  res@xyDashPattern     = 0
-  res@xyMarkLineMode    = "MarkLines"
-  plot2 = gsn_csm_xy(wks,x,ts0,res)
-  overlay(plot1,plot2)
-  draw(plot1)
+  plot = gsn_csm_xy(wks,x,data,res)
 end
 
 undef("ptime_series_diff")
@@ -515,7 +513,7 @@ begin;MAIN;
   end if
 
   ;TODO load midas data fields and station coordinates
-  
+
   midas_stns = read_station_list("$MIDAS_DATA_DIR/station_list.dat")    ; get available midas stations
   ;printVarSummary(midas_data)
   ;print(midas_data(0,:,0:6))
@@ -640,6 +638,9 @@ begin;MAIN;
     ptaylor(wks,wrf_int,obs,VAR_WRF(iv),midas_stns(istns))
     print("done")
     ; Plot time series:
+    print("Calling ptime_series")
+    ptime_series(wks,wrf_int,obs,VAR_WRF(iv))
+    print("done")
     print("Calling ptime_series_diff")
     ptime_series_diff(wks,wrf_int,obs,VAR_WRF(iv))
     print("done")
