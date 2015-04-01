@@ -1,0 +1,10 @@
+# Ignore auto-generated settings:
+*.txt
+*.bak
+auto_presets.ncl
+
+# Ignore image files:
+*.eps
+*.ps
+*.pdf
+
